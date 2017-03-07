@@ -141,31 +141,23 @@ class DynamicBody:
 
         #the speed of the agent on its heading
         s.speed = s.vx * u.cos(s.heading) + s.vy * u.sin(s.heading)
-        #since this speed is there only to affect the forward accel.
-        #clamp it to 0
-        s.speed = u.clamp(0.,s.speed,s.speed)
 
         #clamp the target speed to 0
         if self.target_speed < 0.001:
             self.target_speed = 0.
 
-
         #this is given for the roboats.
-        max_accel = 0.5 - 0.222*(s.speed**2)
-        s.max_accel = max_accel
-        # assuming the boats can not reverse.
-        min_accel = 0.
+        s.max_accel = 0.5 - 0.222*(s.speed**2)
 
         #target acceleration to reach the target speed
         target_accel = 0.
         #try to reach the desired speed
-        if s.speed < self.target_speed:
-            print('###',s.speed,self.target_speed)
-            target_accel = max_accel
-#        if s.speed > self.target_speed:
-#            s.accel = -
+        if s.speed > self.target_speed + config.SPEED_TOLERANCE:
+            target_accel = -s.max_accel
+        if s.speed < self.target_speed + config.SPEED_TOLERANCE:
+            target_accel = s.max_accel
         #ensure min/max accelarations
-        s.accel = u.clamp(min_accel, max_accel, target_accel)
+        s.accel = u.clamp(-s.max_accel, s.max_accel, target_accel)
 
         #update fuel
         fuel_consumption = (20*(s.speed**2))/3600. #fuel consumed per second

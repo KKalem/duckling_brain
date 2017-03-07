@@ -29,13 +29,16 @@ CONTROL_WIN_SIZE = 300
 START_CONTROLS = False
 
 #display size in meters, top left is x=0, max x would be this
-WINDOW_METERS = 50
+WINDOW_METERS = 150
 
 #display pixels per meter
 PPM = WINDOW_SIZE / WINDOW_METERS*1.
 
 #friction coefficient for water
 FRICTION = 0.3
+
+#some tolerance for the speed controller
+SPEED_TOLERANCE = 0.01
 
 ###############################################################################
 # UDP STUFF
