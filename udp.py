@@ -48,7 +48,7 @@ class consumer:
                              socket.inet_aton(mcast_addr) + socket.inet_aton(client_ip))
         self.sock.setblocking(blocking)
 
-    def receive(self, size=1024):
+    def receive(self, size=1024,):
         try:
             pickled_data, addr = self.sock.recvfrom(size)
             data = pickle.loads(pickled_data)

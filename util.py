@@ -5,7 +5,19 @@ Created on Mon Mar  6 19:13:19 2017
 @author: ozer
 bunch of utility functions shared across just about everything
 """
+from __future__ import print_function
 import numpy as np
+import config
+
+def float_format2(value):
+    try:
+        return  "{0:.2f}".format(value)
+    except:
+        print('### problem value',value)
+        return '-'
+
+
+
 
 def msgs_to_self(addr, consumer):
     """

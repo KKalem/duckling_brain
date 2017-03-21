@@ -14,7 +14,7 @@ try:
     c.draw(win)
     i = 0
     while True:
-        c.move(1,1)
+#        c.move(1,1)
         i+=1
         print i
         g.update(10)
