@@ -16,7 +16,17 @@ def float_format2(value):
         print('### problem value',value)
         return '-'
 
-
+def load_colormap(filename):
+        """
+        loads a simple matrix file as a colormap into a numpy array
+        """
+        v = []
+        with open(filename) as f:
+            for line in f:
+                c = [int(part) for part in line.split()]
+                v.append(c)
+        m = np.array(v)/255.
+        return m
 
 
 def msgs_to_self(addr, consumer):

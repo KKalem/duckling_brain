@@ -80,28 +80,17 @@ if __name__=='__main__':
     import matplotlib as mpl
     import matplotlib.pyplot as plt
     import config
-
-    def load_colormap(filename):
-        """
-        loads a simple matrix file as a colormap into a numpy array
-        """
-        v = []
-        with open(filename) as f:
-            for line in f:
-                c = [int(part) for part in line.split()]
-                v.append(c)
-        m = np.array(v)/255.
-        return m
+    import util as u
 
     p_size = 800
     m_size = 50
-    octaves = 12
+    octaves = 5
     origin = 400
     base = 1
-    sigma = 5
+    sigma = 10
     min_depth = -10
     max_depth = 50
-    colormap = mpl.colors.ListedColormap(load_colormap(config.COLORMAP_FILE))
+    colormap = mpl.colors.ListedColormap(u.load_colormap(config.COLORMAP_FILE))
     d = Depthmap(p_size, m_size, octaves, origin, base, sigma, min_depth, max_depth)
     plt.matshow(d.map, cmap = colormap, origin='lower')
     plt.colorbar()

@@ -225,8 +225,10 @@ class DynamicBody:
         #the speed of the agent on its heading
         s.speed = s.vx * u.cos(s.heading) + s.vy * u.sin(s.heading)
 
+        #TODO get the 'go to point' algorithm for parity's sake.
+
         #need to apply accel?
-        if s.speed + 0.02 < self.target_speed:
+        if s.speed <= self.target_speed:
             #forward accel that will be applied
             s.accel = 0.5 - 0.222*(s.speed**2)
         else:
@@ -243,8 +245,11 @@ class DynamicBody:
         #apply acceleration
         s.speed += s.accel * dt
 
+        #maximum allowed speed w/respect to turn rate
+        allowed_speed = self.target_speed * (self.max_turn - np.abs(s.turn))/self.max_turn
+
         #if turning, regardless of accel, speed is lowered
-        s.speed *= (self.max_turn - np.abs(s.turn))/self.max_turn
+        s.speed = min(allowed_speed, s.speed)
 
         #if no accel is applied, drift to a halt
         if s.accel == 0.:
@@ -258,10 +263,6 @@ class DynamicBody:
                 s.vy -= 0.222*(s.vy**2)
         else:
             #change in velocity
-            #TODO when turning, what would the behaviour of the boat?
-            #will the negtaive accel from water be applied all the time?
-            #if the forward accel. formula is the same as negative accel. from
-            #water, then the agent can never move. One of these should be different
             s.vx = s.speed * u.cos(s.heading)
             s.vy = s.speed * u.sin(s.heading)
 
@@ -270,6 +271,10 @@ class DynamicBody:
         dy = s.vy * dt
         s.x += dx
         s.y += dy
+
+
+        #fuel usage
+        s.fuel -= 20.*(s.speed**2)/60 * dt
 
         #record time for next time
         self.last_time = time.time()

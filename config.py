@@ -23,9 +23,9 @@ AGENT_HEAD_RADIUS = 0.5
 #simulation updates per second
 UPDATE_FPS = 60.
 #display size in pixels
-WINDOW_SIZE = 800
+WINDOW_SIZE = 600
 #display size in sim. meters
-WINDOW_METERS = 100.
+WINDOW_METERS = 200. #1k final
 #display size in inches of screen
 WINDOW_INCHES = 5.
 #window dpi
@@ -41,25 +41,26 @@ START_CONTROLS = False
 # Sensor periods in seconds. Simulates the time to reset of sensors
 ###############################################################################
 GPS_FREQ = 1.
-NRG_FREQ = 0.1
-SNR_FREQ = 0.5
-NET_FREQ = 0.8
+NRG_FREQ = 1.
+SNR_FREQ = 1.
+NET_FREQ = 1.
 
 ###############################################################################
 # Sensor polling rates.
 # These are used by the agent to determine when to ask for a new value
 # Made different specifically
 ###############################################################################
-GPS_POLL = 0.1
-NRG_POLL = 0.1
-SNR_POLL = 0.1
-NET_POLL = 0.1
+GPS_POLL = 0.5
+NRG_POLL = 0.5
+SNR_POLL = 0.5
+NET_POLL = 0.5
 
 ###############################################################################
 # Windows
 ###############################################################################
 #display size for agent control windows
 CONTROL_WIN_SIZE = 400
+CONTROL_PPM = CONTROL_WIN_SIZE / WINDOW_METERS*1.
 #display pixels per meter
 PPM = WINDOW_SIZE / WINDOW_METERS*1.
 

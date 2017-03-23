@@ -52,7 +52,6 @@ class PureSensor:
         """
         #The sensor runs all the time, but doesn't busy wait
         while True:
-            #TODO make polling rate work
             #check if we even can do anything
             dt = time.time() - self.last_poll
 
@@ -107,7 +106,6 @@ def make_spawn_command(id, sensor_name, request_sentence, poll_rate):
 
 if __name__=='__main__':
     try:
-        #TODO properly parse these etc
         id = sys.argv[1]
         type = sys.argv[2]
         sentence = sys.argv[3]

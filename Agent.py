@@ -56,10 +56,10 @@ class Agent:
         self.win = g.GraphWin('Agent:'+str(self.id), config.CONTROL_WIN_SIZE, config.CONTROL_WIN_SIZE)
         self.win.setCoords(-config.CONTROL_WIN_SIZE/2., -config.CONTROL_WIN_SIZE/2.,
                       config.CONTROL_WIN_SIZE/2., config.CONTROL_WIN_SIZE/2.)
-        self.win.setBackground('white')
+        self.win.setBackground(g.color_rgb(220,250,255))
 
         #some debug text to display on the control window
-        self.debugtext = g.Text(g.Point(0,0),'No-text')
+        self.debugtext = g.Text(g.Point(-config.CONTROL_WIN_SIZE/2.+70,0),'No-text')
         self.debugtext.draw(self.win)
 
         #agent communication channels
@@ -72,7 +72,34 @@ class Agent:
         self.latest_energy = -1
         self.latest_network = {}
 
+    def draw_self(self):
+        """
+        draws a representation of the agents own state
+        """
+        # draw the gps values on the display
+        x = self.latest_gps[0] * config.CONTROL_PPM
+        y = self.latest_gps[1] * config.CONTROL_PPM
+        vx = self.latest_gps[2] * 20.
+        vy = self.latest_gps[3] * 20.
+        l = g.Line(g.Point(x,y),g.Point(x+vx,y+vy))
+        l.setArrow('last')
+        l.draw(self.win)
 
+        #draw the sonar values
+        d = self.latest_sonar + 10
+        cir = g.Circle(g.Point(x,y), 5)
+        color = g.color_rgb(255-(d*4),150, d*4)
+        cir.setFill(color)
+        cir.setOutline(color)
+        cir.draw(self.win)
+
+    def draw_agent(self, agent_id):
+        """
+        draws the information gained from another agent on self display
+        """
+#        agent = self.others.get(agent_id)
+        #TODO make self.others from network inputs
+        pass
 
 
 
@@ -83,6 +110,9 @@ class Agent:
         #TODO maybe also keep a buffer of values or something
         if hasattr(self,'latest_'+sensor_name):
             setattr(self, 'latest_'+sensor_name, sensor_value)
+
+        self.draw_self()
+
 
     def _make_debug_text(self):
         t = []
