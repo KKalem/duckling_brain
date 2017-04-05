@@ -58,6 +58,7 @@ class DynamicBody:
         -'x','y','vx','vy','ax','ay','pow','speed','accel','turn'
             -> all optional, assumed to be 0 if not given
         -'max_turn' -> turning rate, assumed 15 deg/s if not given
+        -'max_spd' -> maximum forward speed of the vehicle
     """
     def __init__(self, id, **kwargs):
         #string identifier for this body. should have a matching id for its agent
@@ -67,11 +68,13 @@ class DynamicBody:
         #the base station
         self.base = kwargs.get('base')
         #list of bodies of agents, to be used for determining range stuffs
-        self.other_bodies = kwargs.get('other_bodies') if kwargs.get('other_bodies') else []
+        self.other_bodies = kwargs.get('other_bodies', [])
         #init time
         self.last_time = time.time()
         #max turnation speed, degree per sec
-        self.max_turn = kwargs.get('max_turn') if kwargs.get('max_turn') else 15.
+        self.max_turn = kwargs.get('max_turn', 15.)
+        #max forward speed.
+        self.max_speed = kwargs.get('max_speed', 1.5)
 
         #the depth map of the world
         self.depthmap = kwargs.get('depthmap')
@@ -100,11 +103,11 @@ class DynamicBody:
         #speed and accel are scalar with respect to heading
         state_elems = ['x','y','vx','vy','ax','ay','pow','speed','accel','turn']
         for elem in state_elems:
-            setattr(self.state, elem, kwargs.get(elem) if kwargs.get(elem) else 0.0)
+            setattr(self.state, elem, kwargs.get(elem, 0.))
 
 
         #names of sensor handling functions
-        sensors = [config.GET_GPS,config.GET_ENERGY,config.GET_SONAR,'get_net']
+        sensors = [config.GET_GPS,config.GET_ENERGY,config.GET_SONAR,config.GET_NETWORK]
         #last times each sensor responded. Will be used to limit rates
         self.last_times = {}
         for sensor in sensors:
@@ -116,18 +119,20 @@ class DynamicBody:
     def _to_agent_sensor(self, sensor_type, msg):
         self.producer.send(u.msg(self.id+'-'+sensor_type, msg))
 
+
+##############################################################################
+# Handler functions for commands from agent proc.
+##############################################################################
     def get_gps(self):
         #check if sufficient time has passed since last poll
         dt = time.time() - self.last_times[config.GET_GPS]
         if  dt > config.GPS_FREQ:
             output = [self.state.x, self.state.y, self.state.vx, self.state.vy]
+            #add noise
+            output[0] += u.rand_range(config.GPS_POS_NOISE)
+            output[1] += u.rand_range(config.GPS_POS_NOISE)
             self._to_agent_sensor('gps', output)
             self.last_times[config.GET_GPS] = time.time()
-            return True
-        else:
-            print('### gps not ready yet ',dt)
-            #do not respond, make the caller aware of this
-            return False
 
     def get_nrg(self):
         dt = time.time() - self.last_times[config.GET_ENERGY]
@@ -135,69 +140,65 @@ class DynamicBody:
             output = self.state.fuel
             self._to_agent_sensor('energy', output)
             self.last_times[config.GET_ENERGY] = time.time()
-            return True
-        else:
-            print('### nrg not ready yet ', dt)
-            return False
 
     def get_snr(self):
         dt = time.time() - self.last_times[config.GET_SONAR]
         if dt > config.SNR_FREQ:
             output = self.depthmap.get_depth_px(self.state.x * config.PPM, self.state.y * config.PPM)
+            #add noise
+            output += u.rand_range(config.SONAR_NOISE)
             self._to_agent_sensor('sonar', output)
             self.last_times[config.GET_SONAR] = time.time()
-            return True
-        else:
-            print('### snr not ready yet ', dt)
-            return False
 
     def get_net(self):
         dt = time.time() - self.last_times[config.GET_NETWORK]
         if dt > config.NET_FREQ:
             #TODO proper network connections etc
-            output = '###placeholder-'+u.float_format2(time.time())
+            output = '###net-'+u.float_format2(time.time())
             self._to_agent_sensor('network', output)
             self.last_times[config.GET_NETWORK] = time.time()
-            return True
-        else:
-            print('### net not ready yet ', dt)
-            return False
+
+    def inc_speed(self):
+        self.target_speed += 0.1
+
+    def dec_speed(self):
+        self.target_speed -= 0.1
+
+    def turn_left(self):
+        self.state.turn += 0.5
+
+    def turn_right(self):
+        self.state.turn -=0.5
+
+    def set_max_speed(self):
+        self.target_speed = 10.
+
+    def set_stop(self):
+        self.target_speed = 0.
+
+    def reset_turn(self):
+        self.state.turn = 0.
+
+    def set_target(self, point):
+        #TODO implement going to target
+        pass
+
 
     def receive_and_run(self, sim_time):
         """
         This physical body reads sensor requests and responds with the values
         """
-#        self.leftover_messages = []
         messages = u.msgs_to_self(self.addr, self.consumer)
         messages = set(messages) #get rid of duplicates
-#        messages += self.leftover_messages
         if len(messages) > 0:
-            print('### '+self.addr+' received:', messages, 'on time:',sim_time)
+#            print('### '+self.addr+' received:', messages, 'on time:',sim_time)
             for message in messages:
                 #if the body has a function named the same as message, call it
                 if hasattr(self, message):
                     handler_function = getattr(self, message)
-                    sent_response = handler_function()
-                    #TODO will the physical devices respond when they can or
-                    #will they simply ignore the message?
-                    #What to do with unresolved commands?
+                    handler_function()
                 else:
                     print('### '+self.addr+' unknown function call:',message)
-
-
-        #some debug commands
-        for data in messages:
-            if data=='Up':
-                self.target_speed += 0.1
-            if data=='Down':
-                self.target_speed += -0.1
-            if data=='Left':
-                self.state.turn += 5
-            if data=='Right':
-                self.state.turn += -5
-            if data=='s':
-                self._to_agent([self.state.x, self.state.y])
-
 
 
     def update(self, sim_time):
@@ -228,7 +229,7 @@ class DynamicBody:
         #TODO get the 'go to point' algorithm for parity's sake.
 
         #need to apply accel?
-        if s.speed <= self.target_speed:
+        if s.speed < self.target_speed:
             #forward accel that will be applied
             s.accel = 0.5 - 0.222*(s.speed**2)
         else:
@@ -246,7 +247,7 @@ class DynamicBody:
         s.speed += s.accel * dt
 
         #maximum allowed speed w/respect to turn rate
-        allowed_speed = self.target_speed * (self.max_turn - np.abs(s.turn))/self.max_turn
+        allowed_speed = self.max_speed * (self.max_turn - np.abs(s.turn))/self.max_turn
 
         #if turning, regardless of accel, speed is lowered
         s.speed = min(allowed_speed, s.speed)

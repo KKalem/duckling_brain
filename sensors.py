@@ -61,13 +61,10 @@ class PureSensor:
                 #request the relevant data
                 self.p.send(u.msg(self.body_addr,self.request_sentence))
                 self.last_poll = time.time()
-                print('### polled '+self.sensor_type)
                 self.first_poll = False
             else:
                 #can't poll yet, sleep a little
-                print('### sleeping '+self.sensor_type)
                 time.sleep(0.05)
-                print('### woke '+self.sensor_type)
 
             #check if we got any responses
             response = None
@@ -82,7 +79,6 @@ class PureSensor:
                     if data['to'] == self.addr:
                         #we got the response we needed
                         response = data['data']
-                        print('### response:',response)
                 else:
                 #wait for another packet
                     break
@@ -90,17 +86,16 @@ class PureSensor:
                 #we got the response we expected, relay it to the agent
                 to_agent = {'type':self.sensor_type, 'value':response}
                 self.p.send(u.msg(self.agent_addr, to_agent))
-                print('### sent to agent;',to_agent)
 
 
-def make_spawn_command(id, sensor_name, request_sentence, poll_rate):
+def make_spawn_command(id, sensor_type, request_sentence, poll_rate):
     """
     convenince function to generate the command string for pexpect to run
     """
     return ['python',
             'sensors.py',
             str(id),
-            str(sensor_name),
+            str(sensor_type),
             str(request_sentence),
             str(poll_rate)]
 

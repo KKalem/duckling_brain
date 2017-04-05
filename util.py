@@ -9,6 +9,27 @@ from __future__ import print_function
 import numpy as np
 import config
 
+
+
+def load_trace(id):
+    gps = []
+    sonar = []
+    with open(config.TRACE_DIR+id+'_gps_trace','r') as f:
+        for line in f:
+            parts = line.split()
+            gps.append((float(parts[0]), float(parts[1]), float(parts[2])))
+    with open(config.TRACE_DIR+id+'_sonar_trace','r') as f:
+        for line in f:
+            parts = line.split()
+            sonar.append((float(parts[0]), float(parts[1])))
+    return gps, sonar
+
+def rand_range(rng):
+    """
+    return (-rng,rng) random float
+    """
+    return (np.random.ranf()*2*rng) - rng
+
 def float_format2(value):
     try:
         return  "{0:.2f}".format(value)
@@ -62,6 +83,11 @@ def to_rad(deg):
     """
     return np.pi*deg/180.
 
+def to_deg(rad):
+    """
+    Simple radian to degree conversion
+    """
+    return 180*rad/np.pi
 
 def sin(deg):
     """

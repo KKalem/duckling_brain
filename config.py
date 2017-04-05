@@ -15,6 +15,9 @@ NUMBER_OF_AGENTS = 2
 AGENT_SHAPE_RADIUS = 1.5
 #agent head shape radius
 AGENT_HEAD_RADIUS = 0.5
+#max forward speed and angular speeds
+AGENT_MAX_V = 1.5 #m/s
+AGENT_MAX_W = 15. #degrees
 
 
 ###############################################################################
@@ -25,7 +28,7 @@ UPDATE_FPS = 60.
 #display size in pixels
 WINDOW_SIZE = 600
 #display size in sim. meters
-WINDOW_METERS = 200. #1k final
+WINDOW_METERS = 50. #1k final
 #display size in inches of screen
 WINDOW_INCHES = 5.
 #window dpi
@@ -36,6 +39,10 @@ DEPTHMAP_SIZE = WINDOW_SIZE
 DEPTHMAP_OCTAVES = 12
 #should the simulation start the control processes or will they be started manually?
 START_CONTROLS = False
+
+#noise for gps and sonar measurements
+GPS_POS_NOISE = 0.1
+SONAR_NOISE = 0.1
 
 ###############################################################################
 # Sensor periods in seconds. Simulates the time to reset of sensors
@@ -59,7 +66,7 @@ NET_POLL = 0.5
 # Windows
 ###############################################################################
 #display size for agent control windows
-CONTROL_WIN_SIZE = 400
+CONTROL_WIN_SIZE = 600
 CONTROL_PPM = CONTROL_WIN_SIZE / WINDOW_METERS*1.
 #display pixels per meter
 PPM = WINDOW_SIZE / WINDOW_METERS*1.
@@ -101,3 +108,11 @@ DEPTHMAP_SMOOTHING = 1
 #depth range of the seabed. negative depth = land above water
 DEPTHMAP_MINDEPTH = -10
 DEPTHMAP_MAXDEPTH = 50
+
+#distance limit to record measurements for agents. Not moving or moving too slowly
+#causes instabilities for GP
+# in meters
+DISTANCE_THRESHOLD = 0.1
+
+#a directory to save agent traces
+TRACE_DIR = 'traces/'
