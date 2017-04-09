@@ -226,8 +226,6 @@ class DynamicBody:
         #the speed of the agent on its heading
         s.speed = s.vx * u.cos(s.heading) + s.vy * u.sin(s.heading)
 
-        #TODO get the 'go to point' algorithm for parity's sake.
-
         #need to apply accel?
         if s.speed < self.target_speed:
             #forward accel that will be applied
@@ -251,6 +249,9 @@ class DynamicBody:
 
         #if turning, regardless of accel, speed is lowered
         s.speed = min(allowed_speed, s.speed)
+
+        #TODO calculate the world-coord accel given this speed, then apply that
+        #normally instead of SETTING the velocity.
 
         #if no accel is applied, drift to a halt
         if s.accel == 0.:

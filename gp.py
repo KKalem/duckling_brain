@@ -19,15 +19,14 @@ import config
 import time
 
 class GP:
-    def __init__(self, length_scale = 1., nu=2.5, noise_level=0.01):
+    def __init__(self, length_scale = 1., nu=2.5, noise_level=0.001):
         """
-
-        no copy of this is made, mutation of it will affect the results
+        inits the gpr, no ftting done here
         """
         matern = kernels.Matern(length_scale = length_scale, nu = nu)
         white = kernels.WhiteKernel(noise_level = noise_level)
         rbf = kernels.RBF(length_scale=length_scale)
-        self.gpr = GaussianProcessRegressor(kernel=white+matern+rbf, n_restarts_optimizer=15)
+        self.gpr = GaussianProcessRegressor(kernel=white+rbf, n_restarts_optimizer=15)
         #TODO tune/play with everything above
 
     def fit_regress(self,targets,measurements,
