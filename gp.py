@@ -26,7 +26,7 @@ class GP:
         matern = kernels.Matern(length_scale = length_scale, nu = nu)
         white = kernels.WhiteKernel(noise_level = noise_level)
         rbf = kernels.RBF(length_scale=length_scale)
-        self.gpr = GaussianProcessRegressor(kernel=white+rbf, n_restarts_optimizer=15)
+        self.gpr = GaussianProcessRegressor(kernel=white+matern, n_restarts_optimizer=15)
         #TODO tune/play with everything above
 
     def fit_regress(self,targets,measurements,

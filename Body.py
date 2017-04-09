@@ -250,9 +250,6 @@ class DynamicBody:
         #if turning, regardless of accel, speed is lowered
         s.speed = min(allowed_speed, s.speed)
 
-        #TODO calculate the world-coord accel given this speed, then apply that
-        #normally instead of SETTING the velocity.
-
         #if no accel is applied, drift to a halt
         if s.accel == 0.:
             if s.vx < 0.02:

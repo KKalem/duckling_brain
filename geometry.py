@@ -32,12 +32,24 @@ def normalize(V):
     else:
         return np.array(V)/n
 
-def vec_angle(v1,v2):
-	u = np.array(v1)
-	v = np.array(v2)
+def directed_angle(v1,v2):
+    """
+    returns angle in a directed fashion, from v1 to v2
+    negative value means v2 is closer if v1 rotates cw
+    """
+#    angle = atan2(vector2.y, vector2.x) - atan2(vector1.y, vector1.x);
+    angle = np.arctan2(v2[1], v2[0]) - np.arctan2(v1[1], v1[0])
+    return angle
 
-	cost = np.dot(u,v) / (euclid_distance([0,0],u)*euclid_distance([0,0],v))
-	return np.arccos(cost)
+def vec_angle(v1,v2):
+    """
+    returns shortest positive angle between v1,v2
+    """
+    u = np.array(v1)
+    v = np.array(v2)
+
+    cost = np.dot(u,v) / (euclid_distance([0,0],u)*euclid_distance([0,0],v))
+    return np.arccos(cost)
 
 
 def perp_vec(V):
