@@ -19,7 +19,7 @@ import config
 import time
 
 class GP:
-    def __init__(self, length_scale = 1., nu=2.5, noise_level=0.001):
+    def __init__(self, length_scale = 1., nu=2.5, noise_level=0.01):
         """
         inits the gpr, no ftting done here
         """
@@ -126,17 +126,13 @@ class GP:
 
 if __name__=='__main__':
     import util
-    gps, sonar = util.load_trace('0')
-    gps = gps[1:]
-    sonar = sonar[1:]
-    m = []
-    for i in range(min(len(gps),len(sonar))):
-        m.append((gps[i][1],gps[i][2],sonar[i][1]))
+    m = util.load_trace('0')
     m = np.array(m)
+#    m = np.array([[0,0,50],[10,10,5]])
     gp = GP()
-    skip = 2
+    skip = 1
     start = time.time()
-    means, stds = gp.fit_regress(None,m[::skip], grid_density=40, show_plot=True)
+    means, stds = gp.fit_regress(None,m[::skip], grid_density=30, show_plot=True)
     t = time.time()-start
     s = len(m[::skip])
     print('total time;',t)

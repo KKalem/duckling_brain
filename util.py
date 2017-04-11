@@ -12,17 +12,15 @@ import config
 
 
 def load_trace(id):
-    gps = []
-    sonar = []
-    with open(config.TRACE_DIR+id+'_gps_trace','r') as f:
+    vals = []
+    with open(config.TRACE_DIR+id+'_trace','r') as f:
         for line in f:
-            parts = line.split()
-            gps.append((float(parts[0]), float(parts[1]), float(parts[2])))
-    with open(config.TRACE_DIR+id+'_sonar_trace','r') as f:
-        for line in f:
-            parts = line.split()
-            sonar.append((float(parts[0]), float(parts[1])))
-    return gps, sonar
+            parts = line.split(',')
+            nones = filter(lambda p: p=='None', parts)
+            if len(nones) > 0:
+                continue
+            vals.append((float(parts[0]), float(parts[1]), float(parts[2])))
+    return vals
 
 def rand_range(rng):
     """
@@ -34,7 +32,6 @@ def float_format2(value):
     try:
         return  "{0:.2f}".format(value)
     except:
-        print('### problem value',value)
         return '-'
 
 def load_colormap(filename):

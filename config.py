@@ -112,7 +112,12 @@ DEPTHMAP_MAXDEPTH = 50
 #distance limit to record measurements for agents. Not moving or moving too slowly
 #causes instabilities for GP
 # in meters
-DISTANCE_THRESHOLD = 0.1
+DISTANCE_THRESHOLD = 1.
 
 #a directory to save agent traces
 TRACE_DIR = 'traces/'
+
+#distance threshold to consider a target reached
+TARGET_DISTANCE_THRESHOLD = 2.
+#angle threshold to consider a target 'in front'. In degrees
+TARGET_ANGLE_THRESHOLD = 5

@@ -9,6 +9,7 @@ from __future__ import print_function
 import udp
 import config
 import util as u
+import geometry as gm
 
 import time
 
@@ -82,6 +83,9 @@ class DynamicBody:
 
         #a target linear speed towards the heading
         self.target_speed = 0.
+
+        #current target this body is trying to reach
+        self.target = (0,0)
 
         #initial state
         self.state = State(self.id)
@@ -179,14 +183,38 @@ class DynamicBody:
     def reset_turn(self):
         self.state.turn = 0.
 
-    def set_target(self, point):
-        #TODO implement going to target
-        pass
+    def set_target(self, x,y):
+        """
+        set the target the body will move towards
+        """
+        self.target = (float(x), float(y))
+
+    def seek_target(self):
+        """
+        sets speed and turning rate to reach the current target
+        """
+        s = self.state
+        distance = gm.euclid_distance([s.x, s.y], self.target)
+        #if not at target and actually trying to reach it
+        if distance > config.TARGET_DISTANCE_THRESHOLD:
+            self.target_speed = self.max_speed
+            rel_point = [self.target[0] - s.x, self.target[1] - s.y]
+            vx,vy = u.cos(s.heading), u.sin(s.heading)
+            angle_diff = gm.directed_angle([vx,vy], rel_point)
+            # if target to right, turn right
+            if np.abs(angle_diff) > u.to_rad(config.TARGET_ANGLE_THRESHOLD):
+                s.turn = np.sign(angle_diff) * self.max_turn
+            else:
+                s.turn = 0.
+        #reached target
+        else:
+            self.target_speed = 0.
+            s.turn = 0.
 
 
     def receive_and_run(self, sim_time):
         """
-        This physical body reads sensor requests and responds with the values
+        This physical body reads sensor requests and responds with the values or actions
         """
         messages = u.msgs_to_self(self.addr, self.consumer)
         messages = set(messages) #get rid of duplicates
@@ -198,7 +226,17 @@ class DynamicBody:
                     handler_function = getattr(self, message)
                     handler_function()
                 else:
-                    print('### '+self.addr+' unknown function call:',message)
+                    #message contains arguments
+                    parts = message.split(',')
+                    if len(parts)>0:
+                        #command name
+                        cmd = parts[0]
+                        args = parts[1:]
+                        if hasattr(self, cmd):
+                            handler_function = getattr(self, cmd)
+                            handler_function(*args)
+                        else:
+                            print('### '+self.addr+' unknown function call:',message)
 
 
     def update(self, sim_time):
@@ -211,6 +249,9 @@ class DynamicBody:
         """
         if self.last_time < 1.:
             self.last_time = time.time()
+
+        #try to reach target
+        self.seek_target()
 
 
 
