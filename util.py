@@ -10,16 +10,32 @@ import numpy as np
 import config
 
 
+def make_circle_targets(center=[0,0], count=8, radius=1):
+    """
+    returns count number of points radius away from center.
+    """
+    pts = []
+    for angle in np.linspace(0,2*np.pi, count+1):
+        px,py = radius*np.sin(angle), radius*np.cos(angle)
+        px += center[0]
+        py += center[1]
+        pts.append((px,py))
+    return pts[1:]
+
+
 
 def load_trace(id):
     vals = []
     with open(config.TRACE_DIR+id+'_trace','r') as f:
         for line in f:
             parts = line.split(',')
-            nones = filter(lambda p: p=='None', parts)
+            nones = filter(lambda p: p=='None' or p=='None\n', parts)
             if len(nones) > 0:
                 continue
-            vals.append((float(parts[0]), float(parts[1]), float(parts[2])))
+            try:
+                vals.append((float(parts[0]), float(parts[1]), float(parts[2])))
+            except:
+                print(parts)
     return vals
 
 def rand_range(rng):

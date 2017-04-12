@@ -85,7 +85,7 @@ class DynamicBody:
         self.target_speed = 0.
 
         #current target this body is trying to reach
-        self.target = (0,0)
+        self.target = None
 
         #initial state
         self.state = State(self.id)
@@ -193,23 +193,37 @@ class DynamicBody:
         """
         sets speed and turning rate to reach the current target
         """
+        if self.target is None:
+            return None
+
         s = self.state
         distance = gm.euclid_distance([s.x, s.y], self.target)
-        #if not at target and actually trying to reach it
+        #if not at target
         if distance > config.TARGET_DISTANCE_THRESHOLD:
-            self.target_speed = self.max_speed
+            #position of the target relative to body, the speed vector we want
             rel_point = [self.target[0] - s.x, self.target[1] - s.y]
+            #heading vector of the body
             vx,vy = u.cos(s.heading), u.sin(s.heading)
+            #how much the body needs to rotate to head to the target
             angle_diff = gm.directed_angle([vx,vy], rel_point)
-            # if target to right, turn right
+
+            #not close enough
             if np.abs(angle_diff) > u.to_rad(config.TARGET_ANGLE_THRESHOLD):
+                #turn, dont move forward
                 s.turn = np.sign(angle_diff) * self.max_turn
-            else:
+                self.target_speed = 0.
+            else: #looking at target, go forward
+                #move forward, dont turn
                 s.turn = 0.
+                self.target_speed = self.max_speed
         #reached target
         else:
+            #just stahp.
             self.target_speed = 0.
             s.turn = 0.
+            return True
+
+        return False
 
 
     def receive_and_run(self, sim_time):
@@ -250,10 +264,8 @@ class DynamicBody:
         if self.last_time < 1.:
             self.last_time = time.time()
 
-        #try to reach target
+        #try to reach target if there is one
         self.seek_target()
-
-
 
         #time passed since last update
         dt = time.time() - self.last_time
@@ -303,8 +315,8 @@ class DynamicBody:
                 s.vy -= 0.222*(s.vy**2)
         else:
             #change in velocity
-            s.vx = s.speed * u.cos(s.heading)
-            s.vy = s.speed * u.sin(s.heading)
+            s.vx += s.accel * u.cos(s.heading)
+            s.vy += s.accel * u.sin(s.heading)
 
         #apply world-coord speed to displacement
         dx = s.vx * dt

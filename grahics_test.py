@@ -4,7 +4,7 @@ Created on Fri Mar  3 15:39:46 2017
 
 @author: ozer
 """
-
+from __future__ import print_function
 import graphics as g
 
 try:
@@ -14,10 +14,11 @@ try:
     c.draw(win)
     i = 0
     while True:
-#        c.move(1,1)
-        i+=1
-        print i
-        g.update(10)
+        g.update(30)
+        mouse = win.checkMouse()
+        if mouse is not None:
+            x,y = mouse.getX(), mouse.getY()
+            c._reconfig(center, (x,y))
 
 except:
     win.close()

@@ -34,12 +34,20 @@ def normalize(V):
 
 def directed_angle(v1,v2):
     """
-    returns angle in a directed fashion, from v1 to v2
+    returns angle in a directed fashion, from v1 to v2, v1+angle = v2
     negative value means v2 is closer if v1 rotates cw
     """
-#    angle = atan2(vector2.y, vector2.x) - atan2(vector1.y, vector1.x);
-    angle = np.arctan2(v2[1], v2[0]) - np.arctan2(v1[1], v1[0])
-    return angle
+    angle_diff = np.arctan2(v2[1], v2[0]) - np.arctan2(v1[1], v1[0])
+    #somehow difference is larger than 2pi, reel it in
+    if angle_diff >= 2*np.pi:
+        angle_diff = angle_diff % 2*np.pi
+    #somehow diff is larger than a half circle, go the other way
+    if angle_diff > np.pi:
+        angle_diff = 2*np.pi - angle_diff
+    if angle_diff < -np.pi:
+        angle_diff = angle_diff + 2*np.pi
+
+    return angle_diff
 
 def vec_angle(v1,v2):
     """

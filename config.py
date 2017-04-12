@@ -28,7 +28,7 @@ UPDATE_FPS = 60.
 #display size in pixels
 WINDOW_SIZE = 600
 #display size in sim. meters
-WINDOW_METERS = 50. #1k final
+WINDOW_METERS = 200. #1k final
 #display size in inches of screen
 WINDOW_INCHES = 5.
 #window dpi
@@ -95,7 +95,7 @@ GET_ENERGY = 'get_nrg'
 GET_SONAR = 'get_snr'
 GET_NETWORK = 'get_net'
 
-SET_TARGET = 'set_tgt'
+#SET_TARGET = 'set_tgt'
 
 ###############################################################################
 # colormap for the displays
