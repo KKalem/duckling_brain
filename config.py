@@ -28,7 +28,7 @@ UPDATE_FPS = 60.
 #display size in pixels
 WINDOW_SIZE = 600
 #display size in sim. meters
-WINDOW_METERS = 300. #1k final
+WINDOW_METERS = 150. #1k final
 #display size in inches of screen
 WINDOW_INCHES = 5.
 #window dpi

@@ -35,6 +35,7 @@ class GP:
         """
         #filter Nones just in case
         measurements = filter(lambda m: not(m[0] is None or m[1] is None or m[2] is None), measurements)
+        print('[GP] fitting '+str(len(measurements))+' points')
         measurements = np.array(measurements) #make sure its an array now
         X = measurements[:,:2] #positions
         Y = measurements[:,-1] #sonars
@@ -43,14 +44,17 @@ class GP:
 
         start = time.time()
         self.gpr.fit(X,Y)
-        print('fitting time;',time.time()-start)
+        print('[GP] fitting time; '+str(time.time()-start))
 
     def regress(self, targets):
         """
         only does prediction, assuming fitting is done
         """
+        print('[GP] regressing '+str(len(targets))+' points')
+        start = time.time()
         filter(lambda t: t is not None, targets)
         means, stds = self.gpr.predict(targets, return_std=True)
+        print('[GP] regressing time; '+str(time.time()-start))
         return means, stds
 
 
@@ -75,7 +79,7 @@ class GP:
         #do regression over the grid given the data
         start = time.time()
         means,stds = self.regress(targets)
-        print('surface regression time;',time.time()-start)
+        print('[GP] surface regression time; '+str(time.time()-start))
 
         #reshape and amplify the regression results to be plotted
         means_z = np.reshape(means, [grid_density,grid_density])
@@ -163,20 +167,20 @@ class GP:
                 targets.append([x,y])
         targets = np.array(targets)
 
-        print('[I] Regressing for saving, this will take a while...')
+        print('[GP] Regressing for saving, this will take a while...')
         means, stds = self.regress(targets)
         means_z = np.reshape(means, [grid_density,grid_density])
         stds_z = np.reshape(stds, [grid_density,grid_density])
 
-        print('[I] Saving matrices')
+        print('[GP] Saving matrices')
         np.save(config.TRACE_DIR+'/means'+suffix,means_z)
         np.save(config.TRACE_DIR+'/stds'+suffix,stds_z)
 
-        print('[I] Done')
+        print('[GP] Done')
 
 if __name__=='__main__':
     import util
-    m = util.load_trace('0')
+    m = util.load_trace('1')
     m = np.array(m)
     gp = GP()
     skip = 10
@@ -186,7 +190,7 @@ if __name__=='__main__':
     gp.show_surface(m[::skip])
     t = time.time()-start
     s = len(m[::skip])
-    print('total time;',t)
-    print('total samples;',s)
+    print('[GP] total time;',t)
+    print('[GP] total samples;',s)
 
-#    gp.save_matrix()
+    gp.save_matrix(suffix='_14Apr')

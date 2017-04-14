@@ -30,13 +30,33 @@ import matplotlib.pyplot as plt
 #
 #plt.scatter(range(len(angles)),angles)
 
-headings = np.linspace(0,2*np.pi,360)
+#headings = np.linspace(0,2*np.pi,360)
+#
+#vx,vy = [],[]
+#
+#for h in headings:
+#    vx.append(np.cos(h))
+#    vy.append(np.sin(h))
+#
+#plt.plot(vx,'r')
+#plt.plot(vy)
 
-vx,vy = [],[]
 
-for h in headings:
-    vx.append(np.cos(h))
-    vy.append(np.sin(h))
-
-plt.plot(vx,'r')
-plt.plot(vy)
+def gem(l):
+    enough = 165.
+    take_last = 20
+    if len(l) > enough:
+        print 'larger'
+        #always take the last 20 with some skip
+        skip_last = 3
+        take_last *= skip_last
+        res = l[-take_last::skip_last]
+        print len(res)
+        skip = np.round(  (len(l)-len(res)) / enough   )
+        print skip
+        skip = max(1,skip)
+        res.extend(l[::int(skip)])
+        return res
+    else:
+        print 'smaller'
+        return l

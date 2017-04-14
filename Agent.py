@@ -230,26 +230,26 @@ class Agent:
 
         return times
 
-    def get_enough_measurements(self, enough = 180., take_last = 20):
+    def get_enough_measurements(self, enough = 165., take_last = 20):
         #TODO return just enough measurements from self and others instead
         if len(self.measurements) > enough:
             #always take the last 20 with some skip
             skip_last = 3
             take_last *= skip_last
             res = self.measurements[-take_last::skip_last]
-            skip = int((len(self.measurements)-len(res)) / enough)
+            skip = np.round((len(self.measurements)-len(res)) / enough)
             skip = max(1,skip)
-            res.extend(self.measurements[::skip])
+            res.extend(self.measurements[::int(skip)])
             return res
         else:
             return self.measurements
 
 
-    def generate_targets(self, start_range, end_range, count):
+    def generate_targets(self):
         current_pos = self.get_latest_gps()
 
         if current_pos is None:
-            print('I have no idea where I am!')
+            print('[E] I have no idea where I am!')
             return None
 
         #search for a point around the agent in a donut shape with increasing
@@ -257,15 +257,15 @@ class Agent:
         targets = []
         #some candidate points around the agent
         candidates = u.make_circle_targets(center=current_pos,
-                                           radii = range(start_range ,end_range),
-                                           count = count)
+                                           radii = range(self.start_range ,self.end_range),
+                                           count = self.circle_count)
 
         #filter out-of-bounds candidates
         candidates = filter(lambda p: gm.ptInPoly(self.bounds, p), candidates)
 
         #not a single in-bound candidate point was found. give up :(
         #or we even searched the entire map, still no points
-        if candidates is None or len(candidates) < 1 or end_range >= self.max_range:
+        if candidates is None or len(candidates) < 1:
             print('[I] No candidates found!')
             return None
 
@@ -302,7 +302,7 @@ class Agent:
                     c.setFill('green')
                     c.setOutline('green')
                     c.draw(self.win)
-            print('took '+str(time.time()-start)+' seconds for painting')
+            print('[I] took '+str(time.time()-start)+' seconds for painting')
         #####
 
 
@@ -343,7 +343,7 @@ class Agent:
 
             path_stds.append(sum(stds))
             target_stds.append(stds[-1]) #last one is the candidate always
-        print('took '+str(time.time()-start)+' seconds for path stds')
+        print('[I] took '+str(time.time()-start)+' seconds for path stds')
 
         #time to reach these candidate points
         times = self.time_to_reach(current_pos, targets)
@@ -356,11 +356,41 @@ class Agent:
         values = path_stds / times
         best_point = np.argmax(values)
 
-        print('from',current_pos,
-                '\nchosen std path',path_stds[best_point],
-                '\nchosen std target',target_stds[best_point])
+#        print('[I] from',current_pos,
+#                '\n[I] chosen std path',path_stds[best_point],
+#                '\n[I] chosen std target',target_stds[best_point])
 
         return targets[best_point]
+
+
+    def try_setting_target(self):
+        """
+        tries to find and choose a target once. If fails, increases radius and returns
+        without re-trying with the new radius. If succeeds, resets the radii and
+        sets the target.
+        """
+        #dont move while calculating a target
+        self.send_to_body('set_stop')
+        #generate targets around the agent
+        targets = self.generate_targets()
+        #do we have enough targets to make a decision?
+        if targets is not None and len(targets) >= config.MIN_UNEXPLORED:
+            #we have enough targets, choose one and set it
+            self.target = self.choose_target(targets)
+            #reset the radii in case they were increased for this particular search
+            self.start_range = config.DEFAULT_START_RANGE
+            self.end_range = config.DEFAULT_END_RANGE
+            self.circle_count = config.DEFAULT_CIRCLE_COUNT
+            self.max_range = config.WINDOW_SIZE
+            return True
+        else:
+            #we dont have enough targets, increase search radius and pass
+            print('[I] Increasing search radius from',self.end_range)
+            self.start_range = self.end_range
+            self.end_range += config.SEARCH_INCREMENT
+            self.circle_count *= 2
+            return False
+
 
 
 
@@ -454,7 +484,7 @@ class Agent:
             try:
                 self.gp.show_surface(self.measurements)
             except:
-                print('no surface to show yet')
+                print('[E] no surface to show yet')
 
         #mouse controls
         mouse = self.win.checkMouse()
@@ -497,82 +527,33 @@ class Agent:
 ###############################################################################
         if self.mode == 'auto':
             #autonomous control
-
             #got a target?
-            if self.target is None:
-                #need a first target
-                targets = self.generate_targets(self.start_range, self.end_range, self.circle_count)
-                #see if we actually have enough points to make a good-ish decision
-                if targets is None or len(targets) < config.MIN_UNEXPLORED:
-                    #not enough points found
-                    #increase the search radius
-                    print('[I] Increasing search radius from',self.end_range)
-                    self.start_range = self.end_range
-                    self.end_range += config.SEARCH_INCREMENT
-                    self.circle_count *= 2
+            if self.target is not None:
+                #got a target, we should be moving towards it, or already reached
+                #reached target?
+                dist = gm.euclid_distance(self.get_latest_gps(), self.target)
+                if dist < config.TARGET_DISTANCE_THRESHOLD + 2:
+                    #we have a target and we reached it.
+                    target_set = self.try_setting_target()
+                    if target_set:
+                        self.set_body_target(self.target)
                 else:
-                    #enough targets to make a decision
-                    #reset the search
-                    self.start_range = config.DEFAULT_START_RANGE
-                    self.end_range = config.DEFAULT_END_RANGE
-                    self.circle_count = config.DEFAULT_CIRCLE_COUNT
-                    #choose a target
-                    self.target = self.choose_target(targets)
-                #got a target?
-                if self.target is None:
-                    #no target, because not enough measurements
-                    if len(self.measurements) < config.MEASUREMENT_COUNT_THRESHOLD:
-                        #cant even choose a target, move forward a bit to initialize values
-                        print('[I] Moving forward a little to get some measurements')
-                        self.send_to_body('set_max_speed')
-                        time.sleep(0.5)
-                    elif self.end_range > self.max_range:
-                        #no target even with measurements, go into remote mode
-                        print('[I] No target could be found, should probably go to shore now')
-                        print('[I] Remote mode')
-                        self.mode = 'remote'
-                else:
-                    #we got a target, stop
-                    self.send_to_body('set_stop')
-                    self.set_body_target(self.target)
-                    print('[I] Found first target!')
-            else:
-                #we have a target, did we reach it? need a new one?
-                #current known position
-                pos = self.get_latest_gps()
-                #distance to target
-                dtt = gm.euclid_distance(pos, self.target)
-                if dtt < config.TARGET_DISTANCE_THRESHOLD*2:
-                    #we reached the target, find a new one
-                    targets = self.generate_targets(self.start_range, self.end_range, self.circle_count)
-                    #see if we actually have enough points to make a good-ish decision
-                    if targets is None or len(targets) < config.MIN_UNEXPLORED:
-                        #not enough points found
-                        #increase the search radius
-                        print('[I] Increasing search radius from',self.end_range)
-                        self.start_range = self.end_range
-                        self.end_range += config.SEARCH_INCREMENT
-                        self.circle_count *= 2
-                    else:
-                        #enough targets to make a decision
-                        #reset the search radii
-                        self.start_range = config.DEFAULT_START_RANGE
-                        self.end_range = config.DEFAULT_END_RANGE
-                        self.circle_count = config.DEFAULT_CIRCLE_COUNT
-                        #choose a target
-                        self.target = self.choose_target(targets)
-
-                    if self.target is None and self.end_range > self.max_range:
-                        #no target even with measurements
-                        print('[I] No target could be found, should probably go to shore now')
-                        print('[I] Going to remote mode')
-                        self.mode = 'remote'
-                    self.set_body_target(self.target)
-                    print('[I] Set new target')
-                else:
-                    #we havent reached the target yet.
-                    time.sleep(0.1)
+                    #we have a target but not reached yet. Wait to reach it
                     pass
+            else:
+                #we dont have a target
+                #do we have enough measurements to even choose a target?
+                m_len = len(self.measurements)
+                if m_len >= config.MEASUREMENT_COUNT_THRESHOLD:
+                    #we do have enough measurements
+                    target_set = self.try_setting_target()
+                    if target_set:
+                        self.set_body_target(self.target)
+                else:
+                    #we dont even have enough measurements to regress properly
+                    #move the body forward until we do have enough measurements
+                    print('[I] Moving forward a little to get some measurements')
+                    self.send_to_body('set_max_speed')
 
         g.update(config.UPDATE_FPS)
         return False
@@ -580,7 +561,7 @@ class Agent:
     def set_body_target(self, target):
         x,y = target
         self.send_to_body('set_target'+','+str(x)+','+str(y))
-        print('set target to',self.target)
+        print('[T] set target to'+ str(self.target))
 
 
     def send_to_body(self,msg):
@@ -598,7 +579,7 @@ class Agent:
         with open(config.TRACE_DIR+self.id+'_trace','w') as f:
             for x,y,d in self.measurements:
                 f.write(str(x)+','+str(y)+','+str(d)+'\n')
-        print('trace saved to',config.TRACE_DIR+self.id+'_trace')
+        print('[I] trace saved to; '+config.TRACE_DIR+self.id+'_trace')
 
     def _make_debug_text(self):
         t = '-'

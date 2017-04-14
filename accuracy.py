@@ -15,13 +15,14 @@ import matplotlib.pyplot as plt
 import config
 import util as u
 
+suffix = '_14Apr'
 # load the regressed map and the true map
 truth = np.load(config.TRACE_DIR+'/depthmap.npy')
-means = np.load(config.TRACE_DIR+'/means_mat.npy')
-stds = np.load(config.TRACE_DIR+'/stds_mat.npy')
+means = np.load(config.TRACE_DIR+'/means'+suffix+'.npy')
+stds = np.load(config.TRACE_DIR+'/stds'+suffix+'.npy')
 
 # load the measurement trace for min/max values
-m = u.load_trace('0')
+m = u.load_trace('1')
 m = np.array(m)
 
 
@@ -45,22 +46,23 @@ mae = np.mean(abe)
 
 colormap = mpl.colors.ListedColormap(u.load_colormap(config.COLORMAP_FILE))
 
-plt.matshow(truth, cmap = colormap)
-plt.title('Ground truth seabed')
-plt.colorbar()
+#scale and shift the trace to fit plots
+m[:,:2] *= config.PPM
+m[:,:2] += truth.shape[0]/2
 
-plt.matshow(predictions, cmap = colormap)
-plt.title('Predicted seabed')
-plt.colorbar()
 
-plt.matshow(stds, cmap = 'Greens')
-plt.title('Prediction variance')
-plt.colorbar()
+mats = [truth, predictions, stds, sqe, abe]
+cmaps = [colormap, colormap, 'Greens', 'Reds', 'Reds']
+titles = ['Ground truth seabed', 'Predicted seabed', 'Prediction variance','Squared error (MSE='+str(mse)+')', 'Absolute error (MAE='+str(mae)+')']
 
-plt.matshow(sqe, cmap = 'Reds')
-plt.title('Squared error (MSE='+str(mse)+')')
-plt.colorbar()
-
-plt.matshow(abe, cmap = 'Reds')
-plt.title('Absolute error (MAE='+str(mae)+')')
-plt.colorbar()
+for i in range(len(mats)):
+    plt.figure()
+    plt.xlim(0,truth.shape[0])
+    plt.ylim(0,truth.shape[0])
+    plt.hold(True)
+    plt.imshow(mats[i], cmap = cmaps[i])
+    plt.colorbar()
+    plt.plot(m[:,0],m[:,1], color='magenta')
+    plt.title(titles[i])
+    plt.hold(False)
+    plt.show()
