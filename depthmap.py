@@ -12,6 +12,7 @@ from noise import pnoise2
 from scipy.ndimage.filters import gaussian_filter
 import numpy as np
 
+import config
 
 def generate_map(size, octaves, base=1, sigma = 20):
     """
@@ -46,8 +47,6 @@ class Depthmap:
         """
         self.map = generate_map(px_size, octaves, base=base, sigma=sigma)
         self.map = (self.map * (max_depth-min_depth)) + min_depth
-        self.px_size = px_size
-        self.m_size = m_size
         self.px_origin = px_origin
 
         #min/max depth this depthmap will produce.
@@ -75,6 +74,14 @@ class Depthmap:
         d = self.map[int(px),int(py)]
         return d
 
+    def save_depthmap(self):
+        print('[I] Saved depthmap')
+        np.save(config.TRACE_DIR+'/depthmap',self.map)
+
+    def load_depthmap(self):
+        print('[I] Loaded depthmap')
+        self.map = np.load(config.TRACE_DIR+'/depthmap')
+
 
 if __name__=='__main__':
     import matplotlib as mpl
@@ -94,3 +101,4 @@ if __name__=='__main__':
     d = Depthmap(p_size, m_size, octaves, origin, base, sigma, min_depth, max_depth)
     plt.matshow(d.map, cmap = colormap, origin='lower')
     plt.colorbar()
+#    d.save_depthmap()

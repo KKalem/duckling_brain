@@ -16,8 +16,8 @@ AGENT_SHAPE_RADIUS = 1.5
 #agent head shape radius
 AGENT_HEAD_RADIUS = 0.5
 #max forward speed and angular speeds
-AGENT_MAX_V = 1.5 #m/s
-AGENT_MAX_W = 15. #degrees
+AGENT_MAX_V = 1.5 #m/s 1.5 normal
+AGENT_MAX_W = 30. #degrees 15 normal
 
 
 ###############################################################################
@@ -28,7 +28,7 @@ UPDATE_FPS = 60.
 #display size in pixels
 WINDOW_SIZE = 600
 #display size in sim. meters
-WINDOW_METERS = 200. #1k final
+WINDOW_METERS = 300. #1k final
 #display size in inches of screen
 WINDOW_INCHES = 5.
 #window dpi
@@ -120,4 +120,27 @@ TRACE_DIR = 'traces/'
 #distance threshold to consider a target reached
 TARGET_DISTANCE_THRESHOLD = 2.
 #angle threshold to consider a target 'in front'. In degrees
-TARGET_ANGLE_THRESHOLD = 5
+TARGET_ANGLE_THRESHOLD = 0.1
+
+#number of measurements expected to start using gp
+MEASUREMENT_COUNT_THRESHOLD = 5
+
+#min. amount of std. to consider a point 'unexplored'
+#0.02 is about the same as a point with a measurement right next to it
+MIN_STD = 0.15
+
+#min number of points to expect to consider choosing one
+MIN_UNEXPLORED = 5
+
+#default values of smallest search donut
+DEFAULT_START_RANGE = 10
+DEFAULT_END_RANGE = 30
+DEFAULT_CIRCLE_COUNT = 120
+
+#incerement in range when no points is found
+SEARCH_INCREMENT = 20
+
+#a flag to allow agents to paint un/explored areas in their control windows
+PAINT_EXPLORED = True
+PAINT_UNEXPLORED = False
+

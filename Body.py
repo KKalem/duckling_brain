@@ -215,7 +215,7 @@ class DynamicBody:
             else: #looking at target, go forward
                 #move forward, dont turn
                 s.turn = 0.
-                self.target_speed = self.max_speed
+                self.target_speed = 9999
         #reached target
         else:
             #just stahp.
@@ -252,8 +252,69 @@ class DynamicBody:
                         else:
                             print('### '+self.addr+' unknown function call:',message)
 
+    def update_simple(self, sim_time):
+        """
+        a simpler motion model for tests
+        velocity-only
+        """
+        if self.last_time < 1.:
+            self.last_time = time.time()
+
+        #try to reach target if there is one
+        self.seek_target()
+
+        #time passed since last update
+        dt = time.time() - self.last_time
+        #convenience
+        s = self.state
+
+        #limit turning rate to [0,max rate]
+        s.turn = u.clamp(-self.max_turn,self.max_turn,s.turn)
+        #keep heading in [0,360)
+        s.heading = s.heading %360
+        #the speed of the agent on its heading
+        s.speed = s.vx * u.cos(s.heading) + s.vy * u.sin(s.heading)
+
+        #need to apply accel?
+        if s.speed < self.target_speed:
+            #forward accel that will be applied
+            s.accel = 0.5 - 0.222*(s.speed**2)
+        else:
+            # no reversing and braking=not accelarating
+            s.accel = 0.
+
+
+        #######################################################################
+        #physics!
+        #######################################################################
+        #change in heading
+        s.heading += s.turn *dt
+
+        if s.accel > 0:
+            s.speed = 1.5
+        else:
+            s.speed = 0
+
+        s.vx =  s.speed * u.cos(s.heading)
+        s.vy =  s.speed * u.sin(s.heading)
+
+        #apply world-coord speed to displacement
+        dx = s.vx * dt
+        dy = s.vy * dt
+        s.x += dx
+        s.y += dy
+
+
+        #fuel usage
+        s.fuel -= 20.*(s.speed**2)/60 * dt
+
+        #record time for next time
+        self.last_time = time.time()
+        #return the update for graphics
+        return dx, dy
 
     def update(self, sim_time):
+        #TODO get delta t from outside to have control over time
         """
         updates the physical properties of this body
         dt is delta time since last update in seconds
@@ -294,14 +355,16 @@ class DynamicBody:
         #change in heading
         s.heading += s.turn *dt
 
-        #apply acceleration
-        s.speed += s.accel * dt
+#        #apply acceleration
+#        s.speed += s.accel * dt
 
-        #maximum allowed speed w/respect to turn rate
-        allowed_speed = self.max_speed * (self.max_turn - np.abs(s.turn))/self.max_turn
+#        #maximum allowed speed w/respect to turn rate
+#        allowed_speed = self.max_speed * (self.max_turn - np.abs(s.turn))/self.max_turn
 
-        #if turning, regardless of accel, speed is lowered
-        s.speed = min(allowed_speed, s.speed)
+#        #if turning, regardless of accel, speed is lowered
+#        s.speed = min(allowed_speed, s.speed)
+
+        s.accel *= (1- np.abs(s.turn)/self.max_turn)
 
         #if no accel is applied, drift to a halt
         if s.accel == 0.:
@@ -314,9 +377,9 @@ class DynamicBody:
             else:
                 s.vy -= 0.222*(s.vy**2)
         else:
-            #change in velocity
-            s.vx += s.accel * u.cos(s.heading)
-            s.vy += s.accel * u.sin(s.heading)
+                #change in velocity
+                s.vx +=  s.accel * u.cos(s.heading)
+                s.vy +=  s.accel * u.sin(s.heading)
 
         #apply world-coord speed to displacement
         dx = s.vx * dt

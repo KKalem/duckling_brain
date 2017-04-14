@@ -10,16 +10,17 @@ import numpy as np
 import config
 
 
-def make_circle_targets(center=[0,0], count=8, radius=1):
+def make_circle_targets(center=[0,0], count=8, radii=[1]):
     """
-    returns count number of points radius away from center.
+    returns count number of points radii away from center.
     """
     pts = []
-    for angle in np.linspace(0,2*np.pi, count+1):
-        px,py = radius*np.sin(angle), radius*np.cos(angle)
-        px += center[0]
-        py += center[1]
-        pts.append((px,py))
+    for radius in radii:
+        for angle in np.linspace(0,2*np.pi, count+1):
+            px,py = radius*np.sin(angle), radius*np.cos(angle)
+            px += center[0]
+            py += center[1]
+            pts.append((px,py))
     return pts[1:]
 
 

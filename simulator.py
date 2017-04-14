@@ -106,13 +106,15 @@ if __name__=='__main__':
                             config.DEPTHMAP_BASE, config.DEPTHMAP_SMOOTHING,
                             config.DEPTHMAP_MINDEPTH, config.DEPTHMAP_MAXDEPTH)
 
+        print('[I] Saving depthmap')
+        depthmap.save_depthmap()
+
         print('[I] Drawing depthmap')
         #create and save a nicely coloured depthmap
         colormap = mpl.colors.ListedColormap(load_colormap(config.COLORMAP_FILE))
         fig = plt.figure(frameon=False)
         fig.set_size_inches(config.WINDOW_INCHES, config.WINDOW_INCHES)
         ax = plt.Axes(fig, [0., 0., 1., 1.])
-#        ax.set_axis_off()
         fig.add_axes(ax)
         ax.matshow(depthmap.map, cmap=colormap, aspect='equal',
                    vmin=config.DEPTHMAP_MINDEPTH, vmax=config.DEPTHMAP_MAXDEPTH,
@@ -147,7 +149,7 @@ if __name__=='__main__':
 
         #draw the time on screen
         sim_time = 0
-        timetext = g.Text(g.Point(-config.WINDOW_SIZE/2.+20,-config.WINDOW_SIZE/2.+20), sim_time)
+        timetext = g.Text(g.Point(0,-config.WINDOW_SIZE/2.+20), sim_time)
         timetext.draw(win)
 
         #some debug text, set at the end of the event loop if needed.
@@ -219,7 +221,9 @@ if __name__=='__main__':
             for body in agent_bodies.values():
                 #update physics
                 #record the change
-                dx, dy = body.update(sim_time)
+#                dx, dy = body.update(sim_time)
+                dx, dy = body.update_simple(sim_time)
+
                 #receive the commands generated from agents
                 #these are the NMEA sentences meant for the physical bodies to act on
                 #receive the sentence from agent

@@ -108,6 +108,12 @@ class Agent:
         #last known velocity of the body (vx,vy)
         self.V = (0.,0.)
 
+        #search radius for good points to explore
+        self.start_range = config.DEFAULT_START_RANGE
+        self.end_range = config.DEFAULT_END_RANGE
+        self.circle_count = config.DEFAULT_CIRCLE_COUNT
+        self.max_range = config.WINDOW_SIZE
+
         ######################################################################
         # display
         ######################################################################
@@ -205,56 +211,156 @@ class Agent:
             angle = gm.directed_angle(self.V, relative_pt)
 
             #time to turn towards point
-            turn_time = angle/u.to_rad(self.max_turn)
+            turn_time = np.abs(angle)/u.to_rad(self.max_turn)
+
+            #distance to go forward
+            dist = gm.euclid_distance(origin, pt)
 
             #time to reach point going forward
-            forw_time = gm.euclid_distance(origin, pt) / self.max_speed
+            forw_time = dist / self.max_speed
 
-            times.append(turn_time+forw_time)
+            total_time = turn_time+forw_time
+
+            if total_time <= 0:
+                print('total time 0')
+                print('forw_time',forw_time,'dist',dist)
+                print('turn_time',turn_time,'angle',angle)
+
+            times.append(total_time)
+
         return times
 
-    def get_enough_measurements(self):
+    def get_enough_measurements(self, enough = 180., take_last = 20):
         #TODO return just enough measurements from self and others instead
-        return self.measurements
+        if len(self.measurements) > enough:
+            #always take the last 20 with some skip
+            skip_last = 3
+            take_last *= skip_last
+            res = self.measurements[-take_last::skip_last]
+            skip = int((len(self.measurements)-len(res)) / enough)
+            skip = max(1,skip)
+            res.extend(self.measurements[::skip])
+            return res
+        else:
+            return self.measurements
 
 
-    def choose_target(self):
-        """
-        returns a target point that is quickest to reach with the most std deviation
-        """
+    def generate_targets(self, start_range, end_range, count):
         current_pos = self.get_latest_gps()
 
         if current_pos is None:
             print('I have no idea where I am!')
             return None
 
+        #search for a point around the agent in a donut shape with increasing
+        #inner radii.
+        targets = []
         #some candidate points around the agent
         candidates = u.make_circle_targets(center=current_pos,
-                                           radius = 20.,
-                                           count = 120)
+                                           radii = range(start_range ,end_range),
+                                           count = count)
 
         #filter out-of-bounds candidates
         candidates = filter(lambda p: gm.ptInPoly(self.bounds, p), candidates)
 
+        #not a single in-bound candidate point was found. give up :(
+        #or we even searched the entire map, still no points
+        if candidates is None or len(candidates) < 1 or end_range >= self.max_range:
+            print('[I] No candidates found!')
+            return None
 
-        #time to reach these candidate points
-        times = self.time_to_reach(current_pos, candidates)
+        #fit the gp to current measurements, this fitted model will be used later
+        self.gp.fit(self.get_enough_measurements())
 
         #means and std devs. of candidate points given all measurements
-        means, stds = self.gp.fit_regress(targets = candidates,
-                                          measurements = self.get_enough_measurements())
+        means, stds = self.gp.regress(candidates)
 
-        stds = np.array(stds)
+        combined = zip(candidates, means, stds)
+
+        #prevent going to 'explored' points, collect the unexplored ones
+        unexplored = filter(lambda c: c[2] > config.MIN_STD, combined)
+        if unexplored is not None and len(unexplored) > 0:
+            #extract the points only from the triples of (candidate, mean, std)
+            target_points = zip(*unexplored)[0]
+            targets.extend(target_points)
+
+            ##### paint the map with points
+            if config.PAINT_UNEXPLORED:
+                for pt, mean, std in unexplored:
+                        c = g.Point(pt[0]*config.CONTROL_PPM,pt[1]*config.CONTROL_PPM)
+                        c.setFill('white')
+                        c.setOutline('white')
+                        c.draw(self.win)
+
+        ##### paint the control map with explored areas
+        if config.PAINT_EXPLORED:
+            start = time.time()
+            explored = filter(lambda c: c[2] <= config.MIN_STD, combined)
+            if explored is not None and len(explored) > 0:
+                for pt, mean, std in explored:
+                    c = g.Point(pt[0]*config.CONTROL_PPM,pt[1]*config.CONTROL_PPM)
+                    c.setFill('green')
+                    c.setOutline('green')
+                    c.draw(self.win)
+            print('took '+str(time.time()-start)+' seconds for painting')
+        #####
+
+
+        return targets
+
+
+    def choose_target(self, targets):
+        """
+        returns the target point that is quickest to reach with the most std deviation
+        """
+        current_pos = self.get_latest_gps()
+
+        #the value of a point is all the values on the path to that point
+        path_stds = []
+        target_stds = []
+        start = time.time()
+        #put all paths into a single list for GP to regress. Looping over paths
+        #takes forever and is inefficient
+        paths = []
+        path_lens = []
+        for candidate in targets:
+            dist = gm.euclid_distance(current_pos, candidate)
+            path = gm.subdividePath([current_pos, candidate], int(dist))
+            paths.extend(path)
+            path_lens.append(len(path))
+
+        #regress for all paths at once
+        all_means, all_stds = self.gp.regress(paths)
+
+        #separate the paths again
+        for i in range(len(path_lens)):
+            if i == 0:
+                prev = 0
+                stds = all_stds[0:path_lens[i]]
+            else:
+                prev = path_lens[i-1]
+                stds = all_stds[prev + 1 : prev + path_lens[i]]
+
+            path_stds.append(sum(stds))
+            target_stds.append(stds[-1]) #last one is the candidate always
+        print('took '+str(time.time()-start)+' seconds for path stds')
+
+        #time to reach these candidate points
+        times = self.time_to_reach(current_pos, targets)
+
         times = np.array(times)
-
-        stds /= np.max(stds)
-        times /= np.max(times)
+        path_stds = np.array(path_stds)
+        target_stds = np.array(target_stds)
 
         #value of the candidates. quickest most deviating point please
-        values = stds / 2 * times
+        values = path_stds / times
         best_point = np.argmax(values)
 
-        return candidates[best_point]
+        print('from',current_pos,
+                '\nchosen std path',path_stds[best_point],
+                '\nchosen std target',target_stds[best_point])
+
+        return targets[best_point]
 
 
 
@@ -345,11 +451,10 @@ class Agent:
             self.save_trace()
         if key == 'g':
             #draw the GP regressed surface
-            if len(self.measurements) > 5:
-                means, stds = self.gp.fit_regress(None, self.measurements)
-            else:
-                print('move around a little first, not enough measurements!',
-                      len(self.measurements))
+            try:
+                self.gp.show_surface(self.measurements)
+            except:
+                print('no surface to show yet')
 
         #mouse controls
         mouse = self.win.checkMouse()
@@ -396,12 +501,36 @@ class Agent:
             #got a target?
             if self.target is None:
                 #need a first target
-                self.target = self.choose_target()
+                targets = self.generate_targets(self.start_range, self.end_range, self.circle_count)
+                #see if we actually have enough points to make a good-ish decision
+                if targets is None or len(targets) < config.MIN_UNEXPLORED:
+                    #not enough points found
+                    #increase the search radius
+                    print('[I] Increasing search radius from',self.end_range)
+                    self.start_range = self.end_range
+                    self.end_range += config.SEARCH_INCREMENT
+                    self.circle_count *= 2
+                else:
+                    #enough targets to make a decision
+                    #reset the search
+                    self.start_range = config.DEFAULT_START_RANGE
+                    self.end_range = config.DEFAULT_END_RANGE
+                    self.circle_count = config.DEFAULT_CIRCLE_COUNT
+                    #choose a target
+                    self.target = self.choose_target(targets)
+                #got a target?
                 if self.target is None:
-                    #cant even choose a target, move forward a bit to initialize values
-                    print('[I] Moving forward a little to get some gps')
-                    self.send_to_body('set_max_speed')
-                    time.sleep(0.5)
+                    #no target, because not enough measurements
+                    if len(self.measurements) < config.MEASUREMENT_COUNT_THRESHOLD:
+                        #cant even choose a target, move forward a bit to initialize values
+                        print('[I] Moving forward a little to get some measurements')
+                        self.send_to_body('set_max_speed')
+                        time.sleep(0.5)
+                    elif self.end_range > self.max_range:
+                        #no target even with measurements, go into remote mode
+                        print('[I] No target could be found, should probably go to shore now')
+                        print('[I] Remote mode')
+                        self.mode = 'remote'
                 else:
                     #we got a target, stop
                     self.send_to_body('set_stop')
@@ -415,16 +544,35 @@ class Agent:
                 dtt = gm.euclid_distance(pos, self.target)
                 if dtt < config.TARGET_DISTANCE_THRESHOLD*2:
                     #we reached the target, find a new one
-                    self.target = self.choose_target()
+                    targets = self.generate_targets(self.start_range, self.end_range, self.circle_count)
+                    #see if we actually have enough points to make a good-ish decision
+                    if targets is None or len(targets) < config.MIN_UNEXPLORED:
+                        #not enough points found
+                        #increase the search radius
+                        print('[I] Increasing search radius from',self.end_range)
+                        self.start_range = self.end_range
+                        self.end_range += config.SEARCH_INCREMENT
+                        self.circle_count *= 2
+                    else:
+                        #enough targets to make a decision
+                        #reset the search radii
+                        self.start_range = config.DEFAULT_START_RANGE
+                        self.end_range = config.DEFAULT_END_RANGE
+                        self.circle_count = config.DEFAULT_CIRCLE_COUNT
+                        #choose a target
+                        self.target = self.choose_target(targets)
+
+                    if self.target is None and self.end_range > self.max_range:
+                        #no target even with measurements
+                        print('[I] No target could be found, should probably go to shore now')
+                        print('[I] Going to remote mode')
+                        self.mode = 'remote'
                     self.set_body_target(self.target)
                     print('[I] Set new target')
                 else:
                     #we havent reached the target yet.
                     time.sleep(0.1)
                     pass
-
-
-
 
         g.update(config.UPDATE_FPS)
         return False
