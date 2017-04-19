@@ -25,6 +25,13 @@ stds = np.load(config.TRACE_DIR+'/stds'+suffix+'.npy')
 m = u.load_trace('1')
 m = np.array(m)
 
+s = 10*config.PPM
+
+#slice the matrices into the area that the boat was allowed to operate in
+truth = truth[s:-s,s:-s]
+means = means[s:-s,s:-s]
+stds = stds[s:-s,s:-s]
+
 
 #scale the normalized means
 o_min = np.min(means)
@@ -43,6 +50,7 @@ mse = np.mean(sqe)
 #abolsute error
 abe = np.abs(truth - predictions)
 mae = np.mean(abe)
+medae = np.median(abe)
 
 colormap = mpl.colors.ListedColormap(u.load_colormap(config.COLORMAP_FILE))
 
@@ -53,7 +61,7 @@ m[:,:2] += truth.shape[0]/2
 
 mats = [truth, predictions, stds, sqe, abe]
 cmaps = [colormap, colormap, 'Greens', 'Reds', 'Reds']
-titles = ['Ground truth seabed', 'Predicted seabed', 'Prediction variance','Squared error (MSE='+str(mse)+')', 'Absolute error (MAE='+str(mae)+')']
+titles = ['Ground truth seabed', 'Predicted seabed', 'Prediction variance','Squared error (mean='+str(mse)+')', 'Absolute error (mean='+u.float_format2(mae)+', median='+u.float_format2(medae)+')']
 
 for i in range(len(mats)):
     plt.figure()
@@ -66,3 +74,10 @@ for i in range(len(mats)):
     plt.title(titles[i])
     plt.hold(False)
     plt.show()
+    plt.savefig('etc/fig_'+titles[i]+'.png')
+
+import geometry as gm
+L = 0
+for i in range(2,len(m)):
+    L += gm.euclid_distance(m[i-1,:2], m[i,:2])
+print('Total travel:'+str(L))

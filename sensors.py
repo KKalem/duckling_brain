@@ -79,6 +79,10 @@ class PureSensor:
                     if data['to'] == self.addr:
                         #we got the response we needed
                         response = data['data']
+                    if self.sensor_type == 'network':
+                        #if this is a network sensor, listen to broadcasts
+                        if data['to'] == 'broadcast':
+                            response = data['data']
                 else:
                 #wait for another packet
                     break

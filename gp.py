@@ -112,7 +112,10 @@ class GP:
 
         plt.xlabel('x')
         plt.ylabel('y')
-        plt.show(block=False)
+        if kwargs.get('show',True):
+            plt.show(block=False)
+
+        return fig
 
 
 
@@ -183,14 +186,19 @@ if __name__=='__main__':
     m = util.load_trace('1')
     m = np.array(m)
     gp = GP()
-    skip = 10
+    skip = 5
     start = time.time()
-    gp.fit(m[::skip])
-#    means, stds = gp.regress(targets)
-    gp.show_surface(m[::skip])
-    t = time.time()-start
-    s = len(m[::skip])
-    print('[GP] total time;',t)
-    print('[GP] total samples;',s)
+    plt.ioff()
+    last_frame = len(m)
+    for frame in range(1,last_frame,skip):
+        gp.fit(m[0:frame:skip])
+    #    means, stds = gp.regress(targets)
+        fig = gp.show_surface(m[0:frame:skip], show=False)
+        fig.savefig('etc/animation/'+str(frame)+'.png')
+        print(frame, last_frame)
+#        t = time.time()-start
+#        s = len(m[::skip])
+#        print('[GP] total time;',t)
+#        print('[GP] total samples;',s)
 
-    gp.save_matrix(suffix='_14Apr')
+#    gp.save_matrix(suffix='_14Apr')

@@ -46,9 +46,8 @@ class Agent:
         self.mode = 'remote'
 
         #TODO devise some method of storing information from other agents
-        # also look at make_measurement_list when done
         #this ties into the network stuffs
-        self.other_agents = []
+        self.other_agents = {}
 
         #the GP object for this agent
         self.gp = gp.GP()
@@ -63,9 +62,9 @@ class Agent:
         self.target_g = None
 
         #known max turning rate of the agent in degrees
-        self.max_turn = kwargs.get('max_turn', 15.)
+        self.max_turn = kwargs.get('max_turn', config.AGENT_MAX_W)
         #known max forward speed of the agent in m/s
-        self.max_speed = kwargs.get('max_speed', 1.5)
+        self.max_speed = kwargs.get('max_speed', config.AGENT_MAX_V)
 
 
         #the bounding polygon for this agent to stay inside
@@ -92,11 +91,12 @@ class Agent:
         sensors.make_spawn_command(self.id, 'network', config.GET_NETWORK, config.NET_POLL)
         ]
 
-        #start the sensors this agent will take readings from
-        self.sensor_processes = []
-        for command in spawn_commands:
-            proc = Popen(command)
-            self.sensor_processes.append(proc)
+        if kwargs.get('procs',True):
+            #start the sensors this agent will take readings from
+            self.sensor_processes = []
+            for command in spawn_commands:
+                proc = Popen(command)
+                self.sensor_processes.append(proc)
 
         #a list of (x,y,d) for sensor/gps measurements.
         #x,y or d can be None or repeated if sensor data is missing for some reason
@@ -118,23 +118,24 @@ class Agent:
         # display
         ######################################################################
         #a window to draw stuff about this agent
-        self.win = g.GraphWin('Agent:'+str(self.id),
-                              config.CONTROL_WIN_SIZE,
-                              config.CONTROL_WIN_SIZE,
-                              autoflush=False)
-        self.win.setCoords(-config.CONTROL_WIN_SIZE/2., -config.CONTROL_WIN_SIZE/2.,
-                      config.CONTROL_WIN_SIZE/2., config.CONTROL_WIN_SIZE/2.)
-        self.win.setBackground(g.color_rgb(220,250,255))
+        if kwargs.get('win',True):
+            self.win = g.GraphWin('Agent:'+str(self.id),
+                                  config.CONTROL_WIN_SIZE,
+                                  config.CONTROL_WIN_SIZE,
+                                  autoflush=False)
+            self.win.setCoords(-config.CONTROL_WIN_SIZE/2., -config.CONTROL_WIN_SIZE/2.,
+                          config.CONTROL_WIN_SIZE/2., config.CONTROL_WIN_SIZE/2.)
+            self.win.setBackground(g.color_rgb(220,250,255))
 
-        #some debug text to display on the control window
-        self.debugtext = g.Text(g.Point(-config.CONTROL_WIN_SIZE/2.+70,0),'No-text')
-        self.debugtext.draw(self.win)
+            #some debug text to display on the control window
+            self.debugtext = g.Text(g.Point(-config.CONTROL_WIN_SIZE/2.+70,0),'No-text')
+            self.debugtext.draw(self.win)
 
-        #draw the bounding polygon
-        rect_g = map(lambda l: g.Point(l[0]*config.CONTROL_PPM, l[1]*config.CONTROL_PPM), self.bounds)
-        self.bounds_g = g.Polygon(rect_g)
-        self.bounds_g.setOutline('red')
-        self.bounds_g.draw(self.win)
+            #draw the bounding polygon
+            rect_g = map(lambda l: g.Point(l[0]*config.CONTROL_PPM, l[1]*config.CONTROL_PPM), self.bounds)
+            self.bounds_g = g.Polygon(rect_g)
+            self.bounds_g.setOutline('red')
+            self.bounds_g.draw(self.win)
 
 
         ######################################################################
@@ -177,7 +178,6 @@ class Agent:
             cir.draw(self.win)
 
             if self.target is not None:
-#                self.target_line.undraw()
                 self.target_g = g.Circle(g.Point(self.target[0]*config.CONTROL_PPM,
                                                   self.target[1]*config.CONTROL_PPM),
                                          1*config.CONTROL_PPM)
@@ -186,6 +186,32 @@ class Agent:
                 self.target_g.draw(self.win)
         except:
             pass
+
+    def draw_others(self):
+        for other_id, data in self.other_agents.iteritems():
+            mments = data['mments']
+            last_mment_key = max(mments.keys())
+            last_mment = mments[last_mment_key]
+            x,y = last_mment[:2]
+            vx,vy = last_mment[2:4]
+            d = last_mment[4]
+            # draw the gps values on the display
+            x *= config.CONTROL_PPM
+            y *= config.CONTROL_PPM
+            vx *= 20.
+            vy *= 20.
+            l = g.Line(g.Point(x,y),g.Point(x+vx,y+vy))
+            l.setFill('gray')
+            l.draw(self.win)
+
+            #draw the sonar values
+            d += 10
+            cir = g.Circle(g.Point(x,y), 2*config.CONTROL_PPM)
+            color = g.color_rgb((255-(d*4)),150., (d*4))
+            cir.setFill(color)
+            cir.setOutline(color)
+            cir.draw(self.win)
+
 
     def get_latest_gps(self):
         """
@@ -230,19 +256,135 @@ class Agent:
 
         return times
 
-    def get_enough_measurements(self, enough = 165., take_last = 20):
-        #TODO return just enough measurements from self and others instead
-        if len(self.measurements) > enough:
-            #always take the last 20 with some skip
-            skip_last = 3
-            take_last *= skip_last
-            res = self.measurements[-take_last::skip_last]
-            skip = np.round((len(self.measurements)-len(res)) / enough)
-            skip = max(1,skip)
-            res.extend(self.measurements[::int(skip)])
-            return res
+    def get_enough_measurements(self, enough = 165., take_last = 20, skip_last = 5):
+        """
+        returns enough measurements for GP to get an 'ok' regression in
+        limited time.
+        take_last = # of points to always take from the last n measurements
+        skip_last = how many points to skip in the take_last. this is to keep the
+        most recent trai of the agent always accurate and unchanging with number of points
+        in the rest of the map.
+        """
+        #make a list of all measurements, sorted by time=id
+        #for each m-list, take the last N items, then take 'enough' from the
+        #rest, combined for all agents. Result should be a homogeneous selection
+        #of points across all agents.
+
+        #number of points all agents, including self have
+        total_points = len(self.measurements)
+
+        #measurement maps of other agents
+        other_mments = []
+        other_ids = []
+        for other_agent_map in self.other_agents.itervalues():
+            #mments have velcoities too, strip them out before use
+            mments = other_agent_map['mments']
+            other_ids.append(mments.keys())
+            mments = map(lambda m: (m[0],m[1],m[4]), mments.values()) #x,y,d
+            other_mments.append(mments)
+            total_points += len(mments)
+
+        #if there is only enough points, no need to thin them down.
+        if total_points <= enough:
+            ret = []
+            ret.extend(self.measurements)
+            for other in other_mments:
+                ret.extend(other)
+#            print('<enough',np.array(ret).shape)
+#            print(np.array(ret))
+            return ret
+
+        #there be more than enough measurements, gotta thin them down
+        #for easy slicing
+        take_last *= skip_last
+        #number of taken points from the last parts
+        last_taken = 0
+        #last points from self measurements, easy with an already sorted array
+        if len(self.measurements) <= take_last:
+            self_last = self.measurements
+            self_remaining = 0
         else:
-            return self.measurements
+            self_last = self.measurements[-take_last::skip_last]
+            self_remaining = len(self.measurements) - len(self_last)
+        last_taken += len(self_last)
+        #last points from other agents
+        other_last = []
+        #sorted-by-id mments of other agents. all measurements in this.
+        other_sorted = []
+        #remaining number of points from each agent
+        other_remaining = []
+        for mments,ids in zip(other_mments, other_ids):
+            #does this particular agent have enough to thin down?
+            if len(ids) <= take_last:
+                #it does not. so just take all available points
+                other_last.append(mments)
+                last_taken+=len(mments)
+                other_remaining.append(0)
+            else:
+                #it does have more than the last points
+                #take the required last points, then get whats left later
+                zipped = zip(ids,mments)
+                sorted_by_id = sorted(zipped, key=lambda e: e[0]) #sort by id
+                sorted_mments = zip(*sorted_by_id)[1] #separate mments from ids
+                other_sorted.append(sorted_mments) #keep for later
+                taken = sorted_mments[-take_last::skip_last]
+                other_last.append(taken)
+                last_taken += len(taken)
+                other_remaining.append(len(sorted_mments) - len(taken))
+
+
+        #now that the last points are taken, how many points are left to take from
+        #the tails?
+        tail_count = total_points - last_taken
+        #how many points to take in total from the tails
+        remaining = enough - last_taken
+        #to reach this number of points, how many should be skipped from each mment list
+        tail_skip = int(np.round(tail_count / float(remaining)))
+
+        #does this agent have any more to take?
+        if self_remaining <= 0:
+            #nope, we already took everything this agent had
+            self_tail = []
+        else:
+            #its got a tail! cut it, it'll grow back.
+            self_tail = self.measurements[:-take_last:tail_skip]
+
+        #tails of other agents
+        other_tail = []
+
+        #do the same for other agent measurements
+        for mments,remaining in zip(other_sorted,other_remaining):
+            if remaining <= 0:
+                other_tail.append([])
+            else:
+                tail = mments[:-take_last:tail_skip]
+                other_tail.append(tail)
+
+        #now we have the heads and tails of all others and self
+        ret = []
+#        print('self_last',len(self_last))
+        ret.extend(self_last)
+#        print('self_tail',len(self_tail))
+        ret.extend(self_tail)
+        for other_tail, other_last in zip(other_tail, other_last):
+            ret.extend(other_last)
+#            print('other_last',len(other_last))
+            ret.extend(other_tail)
+#            print('other_tail',len(other_tail))
+        return ret
+
+        #old code for when you want mments from just self.
+#        if len(self.measurements) > enough:
+#            #always take the last 20 with some skip
+#            skip_last = 3
+#            take_last *= skip_last
+#            res = self.measurements[-take_last::skip_last]
+#            skip = np.round((len(self.measurements)-len(res)) / enough)
+#            skip = max(1,skip)
+#            res.extend(self.measurements[::int(skip)])
+#            return res
+#        else:
+#            return self.measurements
 
 
     def generate_targets(self):
@@ -356,9 +498,7 @@ class Agent:
         values = path_stds / times
         best_point = np.argmax(values)
 
-#        print('[I] from',current_pos,
-#                '\n[I] chosen std path',path_stds[best_point],
-#                '\n[I] chosen std target',target_stds[best_point])
+        print('[I] chosen std target',target_stds[best_point])
 
         return targets[best_point]
 
@@ -381,7 +521,7 @@ class Agent:
             self.start_range = config.DEFAULT_START_RANGE
             self.end_range = config.DEFAULT_END_RANGE
             self.circle_count = config.DEFAULT_CIRCLE_COUNT
-            self.max_range = config.WINDOW_SIZE
+            self.max_range = config.WINDOW_METERS
             return True
         else:
             #we dont have enough targets, increase search radius and pass
@@ -391,6 +531,42 @@ class Agent:
             self.circle_count *= 2
             return False
 
+
+    def broadcast_latest_measurement(self):
+        """
+        broadcasts the latest measurement with known depth, position and velocity
+        """
+        #do we even have a measurement yet?
+        if len(self.measurements) < 1:
+            return None, None
+
+        #search for the latest complete measurement
+        gps = None
+        sonar = None
+        m = None
+        id = None
+        idx = 0
+        while gps is None or sonar is None:
+            idx += 1
+            #got that many measurements?
+            if len(self.measurements) <= idx:
+                return None, None
+            m = self.measurements[-idx]
+            id = self.m_ids[-idx]
+            gps = m[:2]
+            sonar = m[2]
+
+        pos = (m[0],m[1],self.V[0],self.V[1],m[2])
+        self.broadcast({'from':self.id,'pos':pos,'id':id})
+        return pos,id
+
+
+#    def missing_from_other(self, other_id):
+#        #the measurements we have from this agent
+#        mments = self.other_agents.get(other_id,None)
+#        #do we have ANY at all?
+#        if mments is None or len(mments) < 1:
+#            return
 
 
 
@@ -404,10 +580,13 @@ class Agent:
 
         #draw the agent on display
         self.draw_self()
+        #draw the other agents on display
+        self.draw_others()
 
-        ######################################################################
-        # sensor readings
-        ######################################################################
+        #######################################################################
+        # sensor readings, these are not in functions since this method is ran
+        # at high frequency. Python is horrible with function calls.
+        #######################################################################
         #from the incoming queue, only read the ones addressed to this agent
         messages = u.msgs_to_self(self.addr, self.consumer)
         #if there are messages to this agent, handle'em
@@ -417,8 +596,38 @@ class Agent:
                 sensor_value = message.get('value')
                 if sensor_value is not None and sensor_type is not None:
                     if sensor_type == 'network':
-                        #TODO handle network readings
-                        pass
+                        #stuff read from the network should be data from other agents
+                        #string id of agent sending the broadcast
+                        other_id = sensor_value.get('from')
+                        #measurement, x,y,vx,vy,depth
+                        bcast_mment = sensor_value.get('pos')
+                        #measurement id, a simple sequence number for later diffing
+                        bcast_m_id = sensor_value.get('id')
+
+                        #care about bcasts only from others
+                        if other_id is not None and other_id != self.id:
+                            #simulating a network range
+                            self_pos = self.get_latest_gps()
+                            if self_pos is not None:
+                                dist = gm.euclid_distance(self_pos, bcast_mment[:2])
+                            else:
+                                #no clue where we are, assume no-connection
+                                dist = config.NETWORK_RANGE+1
+
+                            #dist can be None, early stopping of booleans ftw
+                            if not config.SIMULATE_NETWORK_BREAKAGE or dist <= config.NETWORK_RANGE:
+                                #do we have a record for this agent?
+                                other_agent = self.other_agents.get(other_id)
+                                if other_agent is None:
+                                    #we dont have a record for this agent, make a new one
+                                    #all we need is an id and the measurements of that agent
+                                    new_agent = {'id':other_id, 'mments':{bcast_m_id:bcast_mment}}
+                                    #record this new agent
+                                    self.other_agents[other_id] = new_agent
+                                else:
+                                    #we already know about this agent, update its measurements
+                                    other_agent['mments'][bcast_m_id] = bcast_mment
+
                     if sensor_type == 'gps':
                         #velocity and heading from gps
                         self.V = sensor_value[2:]
@@ -460,6 +669,8 @@ class Agent:
                                 self.measurements[-1][2] = d
 
 
+        #broadcast the last measurement so the other agents can avoid us, record us w/e
+        self.broadcast_latest_measurement()
         #set the debug text to sensor readings
         self.debugtext.setText(self._make_debug_text())
 
@@ -518,9 +729,9 @@ class Agent:
             if key=='x':
                 self.send_to_body('reset_turn')
 
-            if key=='q':
-                self.target = self.choose_target()
-                self.set_body_target(self.target)
+            if key=='b':
+                for id,data in self.other_agents.iteritems():
+                    print(id,data['mments'].keys())
 
 ###############################################################################
 # AUTO CONTROL
@@ -570,6 +781,12 @@ class Agent:
         should be used to control the body of the agent
         """
         self.producer.send(u.msg(self.id+'-body',msg))
+
+    def broadcast(self, msg):
+        """
+        sends a message for anyone in range to listen to
+        """
+        self.producer.send(u.msg('broadcast', msg))
 
 
     def save_trace(self):
