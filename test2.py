@@ -67,24 +67,27 @@ import Agent
 a = Agent.Agent('0', win=False, procs=False)
 
 messes = []
-for m_count in range(1000):
-#    m_count = 200
-    ms = zip(range(m_count),range(m_count),range(m_count))
-    oms = zip(range(m_count),range(m_count),range(m_count),range(m_count),range(m_count))
+#for m_count in range(1000):
+m_count = 3
+ms = zip(range(m_count),range(m_count),range(m_count))
+oids = [1,3,5]
+oms = zip(oids,range(m_count),range(m_count),range(m_count),range(m_count))
 
-    a.measurements = ms
+a.measurements = ms
 
-    other_agents = {}
-    for i in range(4):
-        agent = {'id':i, 'mments':{}}
-        for m in oms:
-            agent['mments'][m[0]]=m
-        other_agents[str(i)] = agent
+other_agents = {}
+for i in range(1):
+    agent = {'id':str(i), 'mments':{}}
+    for m in oms:
+        agent['mments'][m[0]]=m
+    other_agents[str(i)] = agent
 
-    a.other_agents = other_agents
+a.other_agents = other_agents
 
-    mes = a.get_enough_measurements(enough=250)
-    messes.append(len(mes))
+missing = a.missing_mments_other('0')
 
-plt.plot(messes)
+#mes = a.get_enough_measurements(enough=250)
+#messes.append(len(mes))
+
+#plt.plot(messes)
 #print len(mes)

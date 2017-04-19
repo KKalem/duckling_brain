@@ -145,6 +145,6 @@ PAINT_EXPLORED = True
 PAINT_UNEXPLORED = False
 
 #should the agent ignore broadcasts that are far away?
-SIMULATE_NETWORK_BREAKAGE = True
+SIMULATE_NETWORK_BREAKAGE = False
 #range to start ignoring messages
 NETWORK_RANGE = 50

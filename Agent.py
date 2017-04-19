@@ -200,9 +200,10 @@ class Agent:
             y *= config.CONTROL_PPM
             vx *= 20.
             vy *= 20.
-            l = g.Line(g.Point(x,y),g.Point(x+vx,y+vy))
-            l.setFill('gray')
-            l.draw(self.win)
+            if vx>=0 and vy>=0:
+                l = g.Line(g.Point(x,y),g.Point(x+vx,y+vy))
+                l.setFill('gray')
+                l.draw(self.win)
 
             #draw the sonar values
             d += 10
@@ -557,22 +558,127 @@ class Agent:
             sonar = m[2]
 
         pos = (m[0],m[1],self.V[0],self.V[1],m[2])
-        self.broadcast({'from':self.id,'pos':pos,'id':id})
+        self.broadcast({'from':self.id,
+                        'bcast_type':'mment',
+                        'pos':pos,
+                        'id':id})
         return pos,id
 
 
-#    def missing_from_other(self, other_id):
-#        #the measurements we have from this agent
-#        mments = self.other_agents.get(other_id,None)
-#        #do we have ANY at all?
-#        if mments is None or len(mments) < 1:
-#            return
+    def missing_mments_other(self, other_id):
+        """
+        returns a set of ids that are missing from the sequence of ids we have
+        assuming the largest id is indeed the last one.
+
+        Returned set is unordered, but that is irrelevant.
+        """
+        #the measurements we have from this agent
+        other_agent = self.other_agents.get(other_id,None)
+        #do we have ANY at all?
+        if other_agent is None:
+            #we have no mments from this agent at all
+            return None
+
+        #just the measurements please
+        mments = other_agent.get('mments')
+
+        if len(mments) < 1:
+            #we somehow have some idea what this agent is, but have no mments from it
+            return None
+
+        #we have some measurements
+        #the measurements have increasing sequence numbers, 'ids'
+        #convert to ints
+        ids = map(int, mments.keys())
+        #sets make diffing easy.
+        ids = set(ids)
+        #last known mment id
+        last = max(ids)
+        #given the last measurement id, we -should- have the entire range of measurements
+        ideal_ids = set(range(last))
+        #missing ids are the difference between ideal and existing
+        missing = ideal_ids.difference(ids)
+
+        return missing,last
+
+
+    def broadcast_missing(self):
+        """
+        broadcast the missing ids for each agent. Any other agent that can read
+        this will respond with the missing values.
+
+        The situation where we know of an agents id but have NO mments from it is
+        not handled. Assuming we 'know' of agents first when we hear a measurement from
+        them. Which should be very frequent when they are in range.
+        """
+        for other_agent in self.other_agents.values():
+            missing,last = self.missing_mments_other(other_agent['id'])
+            if missing is not None and len(missing) > 0:
+                #we are missing some stuff, broadcast this fact
+                self.broadcast({'from':self.id,
+                                'bcast_type':'missing',
+                                'missing_from':other_agent['id'],
+                                'missing':missing,
+                                'last':last})
+
+
+    def broadcast_filling(self, missing_from, missing, last):
+        """
+        broadcasts the filling values with whatever data this agent has.
+        missing_from is the agent id that this data is from
+        missin is a set of measurement ids that is requested
+        last is the last known id by the broadcasting agent
+
+        the broadcast is targetless, recipient is anyone that listens.
+        """
+        fill = []
+        #is the other guy missing data from this agent?
+        if missing_from == self.id:
+            #missing data from this, send self data
+            for mment_id in missing:
+                #self measurements are id-indexed
+                xyd = self.measurements[mment_id]
+                mment = (xyd[0],xyd[1],-1,-1,xyd[2]) # velocities are not stored, add filler
+                fill.append([mment_id,mment])
+
+            if max(missing) < self.m_ids[-1]:
+                #the other guy doesnt know what its even missing
+                for i in range(max(missing),self.m_ids[-1]):
+                    xyd = self.measurements[i]
+                    mment = (xyd[0],xyd[1],-1,-1,xyd[2]) # velocities are not stored, add filler
+                    fill.append([i,mment])
+        else:
+            #missing data from an other agent that we might know about
+            other_agent = self.other_agents.get(missing_from)
+            #do we know this agent?
+            if other_agent is not None:
+                #we do
+                mments = other_agent['mments']
+                for mment_id in missing:
+                    mment = mments.get(mment_id)
+                    #did we have this particular measurement?
+                    if mment is not None:
+                        #velocities of other agents ARE stored, no need for filler
+                        fill.append([mment_id,mment])
+                    #if we did not, nothing to do
+
+
+        #broadcast this filling data, hope the other guy(s) read it
+        #can't broadcast the entire thing in one go, pickle explodes. even when
+        #I converted it to a string
+        #so bcast every single mment as if it was coming from the agent itself.
+        #basically spoof the other agent
+        for id,mment in fill:
+            self.broadcast({'from':missing_from,
+                            'bcast_type':'mment',
+                            'pos':mment,
+                            'id':id})
 
 
 
 
 ###############################################################################
-# actual control that is run continuesly
+# actual control that is run continuously
 ###############################################################################
     def control(self):
         #time since starting control
@@ -599,34 +705,89 @@ class Agent:
                         #stuff read from the network should be data from other agents
                         #string id of agent sending the broadcast
                         other_id = sensor_value.get('from')
-                        #measurement, x,y,vx,vy,depth
-                        bcast_mment = sensor_value.get('pos')
-                        #measurement id, a simple sequence number for later diffing
-                        bcast_m_id = sensor_value.get('id')
 
-                        #care about bcasts only from others
-                        if other_id is not None and other_id != self.id:
-                            #simulating a network range
-                            self_pos = self.get_latest_gps()
-                            if self_pos is not None:
-                                dist = gm.euclid_distance(self_pos, bcast_mment[:2])
-                            else:
-                                #no clue where we are, assume no-connection
-                                dist = config.NETWORK_RANGE+1
+                        #broadcasts have types 'missing' and 'mment' ////not or 'fill'
+                        bcast_type = sensor_value.get('bcast_type')
 
-                            #dist can be None, early stopping of booleans ftw
-                            if not config.SIMULATE_NETWORK_BREAKAGE or dist <= config.NETWORK_RANGE:
-                                #do we have a record for this agent?
-                                other_agent = self.other_agents.get(other_id)
-                                if other_agent is None:
-                                    #we dont have a record for this agent, make a new one
-                                    #all we need is an id and the measurements of that agent
-                                    new_agent = {'id':other_id, 'mments':{bcast_m_id:bcast_mment}}
-                                    #record this new agent
-                                    self.other_agents[other_id] = new_agent
+#                        #handle filling broadcasts.
+#                        #these are bcasts that will fill some gap in measurements of some agent
+#                        #it might not be FOR this agent, but this agent might fill a few holes
+#                        #here and there maybe.
+#                        if bcast_type == 'fill':
+#                            #ignore self-broadcasts
+#                            if other_id is not None and other_id != self.id:
+#                                fill_to = sensor_value.get('fill_to')
+#                                fillstr = sensor_value.get('fill')
+#
+#                                #convert the string back to a list of tuples (id,meas.)
+#                                lines = fillstr.split('\n')
+#                                fill = []
+#                                for line in lines:
+#                                    #sanity
+#                                    if len(line) < 1:
+#                                        continue
+#                                    parts = line.split(',')
+#                                    m = (parts[0], (float(parts[1]),float(parts[2]),float(parts[3]),float(parts[4]),float(parts[5])))
+#                                    fill.append(m)
+#
+#
+#                                #which agent does this data belong to?
+#                                other_agent = self.other_agents.get(fill_to)
+#                                if other_agent is None:
+#                                    #its an agent we havent met before!
+#                                    new_agent = {'id':fill_to, 'mments':{}}
+#                                    #record this new agent
+#                                    self.other_agents[other_id] = new_agent
+#
+#                                #we know this guy. for sure.
+#                                other_agent = self.other_agents.get(fill_to)
+#                                for m_id,m in fill:
+#                                    #fill in the measurement map of this agent
+#                                    other_agent['mments'][m_id] = m
+
+
+
+
+                        #handle missing value broadcasts
+                        if bcast_type == 'missing':
+                            #ignore self-broadcasts
+                            if other_id is not None and other_id != self.id:
+                                missing_from = sensor_value.get('missing_from')
+                                missing = sensor_value.get('missing')
+                                last = sensor_value.get('last')
+                                #broadcast whatever we have of this missing data
+                                self.broadcast_filling(missing_from, missing, last)
+
+                        #handle measurement broadcasts
+                        if bcast_type == 'mment':
+                            #measurement, x,y,vx,vy,depth
+                            bcast_mment = sensor_value.get('pos')
+                            #measurement id, a simple sequence number for later diffing
+                            bcast_m_id = sensor_value.get('id')
+
+                            #care about bcasts only from others
+                            if other_id is not None and other_id != self.id:
+                                #simulating a network range
+                                self_pos = self.get_latest_gps()
+                                if self_pos is not None:
+                                    dist = gm.euclid_distance(self_pos, bcast_mment[:2])
                                 else:
-                                    #we already know about this agent, update its measurements
-                                    other_agent['mments'][bcast_m_id] = bcast_mment
+                                    #no clue where we are, assume no-connection
+                                    dist = config.NETWORK_RANGE+1
+
+                                #dist can be None, early stopping of booleans ftw
+                                if not config.SIMULATE_NETWORK_BREAKAGE or dist <= config.NETWORK_RANGE:
+                                    #do we have a record for this agent?
+                                    other_agent = self.other_agents.get(other_id)
+                                    if other_agent is None:
+                                        #we dont have a record for this agent, make a new one
+                                        #all we need is an id and the measurements of that agent
+                                        new_agent = {'id':other_id, 'mments':{bcast_m_id:bcast_mment}}
+                                        #record this new agent
+                                        self.other_agents[other_id] = new_agent
+                                    else:
+                                        #we already know about this agent, update its measurements
+                                        other_agent['mments'][bcast_m_id] = bcast_mment
 
                     if sensor_type == 'gps':
                         #velocity and heading from gps
@@ -671,9 +832,8 @@ class Agent:
 
         #broadcast the last measurement so the other agents can avoid us, record us w/e
         self.broadcast_latest_measurement()
-        #set the debug text to sensor readings
-        self.debugtext.setText(self._make_debug_text())
-
+        #broadcast the missing values of other agents
+        self.broadcast_missing()
 
         ######################################################################
         # controls
@@ -696,6 +856,17 @@ class Agent:
                 self.gp.show_surface(self.measurements)
             except:
                 print('[E] no surface to show yet')
+        if key == 'b':
+            for other_agent in self.other_agents.values():
+                mments = other_agent['mments']
+                for mment in mments.values():
+                    x,y = mment[0],mment[1]
+                    x*=config.CONTROL_PPM
+                    y*=config.CONTROL_PPM
+                    c = g.Point(x,y)
+                    c.setFill('red')
+                    c.setOutline('red')
+                    c.draw(self.win)
 
         #mouse controls
         mouse = self.win.checkMouse()
@@ -729,9 +900,6 @@ class Agent:
             if key=='x':
                 self.send_to_body('reset_turn')
 
-            if key=='b':
-                for id,data in self.other_agents.iteritems():
-                    print(id,data['mments'].keys())
 
 ###############################################################################
 # AUTO CONTROL
@@ -797,26 +965,6 @@ class Agent:
             for x,y,d in self.measurements:
                 f.write(str(x)+','+str(y)+','+str(d)+'\n')
         print('[I] trace saved to; '+config.TRACE_DIR+self.id+'_trace')
-
-    def _make_debug_text(self):
-        t = '-'
-        try:
-            i = 0
-            max_i = len(self.measurements)
-            nones = [0]
-            while i<max_i and len(nones)>0:
-                i+=1
-                x,y,d = self.measurements[-i]
-                nones = filter(lambda v: v is None, [x,y,d])
-
-            vx,vy = self.V
-            t = ''
-            t += 'x,y,d; '+u.float_format2(x)+','+u.float_format2(y)+','+u.float_format2(d)+'\n'
-            t += 'vx,vy; '+u.float_format2(vx)+','+u.float_format2(vy)+'\n'
-            t += 'ms; '+str(len(self.measurements))+'\n'
-        except:
-            return t
-        return t
 
 
 if __name__=='__main__':
