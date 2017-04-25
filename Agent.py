@@ -45,8 +45,12 @@ class Agent:
         #remote for getting keyboard input to control speed/turn
         self.mode = 'remote'
 
-        #TODO devise some method of storing information from other agents
-        #this ties into the network stuffs
+        #a map of agent_id -> properties for each of the other agents
+        #this agent has encountered.
+        #the properties are:
+        #'id' obv.
+        #'mments' a map of {m_id:mment}
+        #'target' [point,value] for the current target of this other agent
         self.other_agents = {}
 
         #the GP object for this agent
@@ -58,6 +62,7 @@ class Agent:
 
         #currently set target the agent should be trying to reach
         self.target = None
+        self.target_value = -1
         #a line connecting the agent to its target, for graphics pruposes only.
         self.target_g = None
 
@@ -84,11 +89,13 @@ class Agent:
         # sensor stuff
         ######################################################################
         #spawn commands for the sensor processes
+        #default packet size is 1024 bytes and is enough for everything but the network
+        #give the network proc the largest possible UDP packet size
         spawn_commands = [
         sensors.make_spawn_command(self.id, 'gps', config.GET_GPS, config.GPS_POLL),
         sensors.make_spawn_command(self.id, 'energy', config.GET_ENERGY, config.NRG_POLL),
         sensors.make_spawn_command(self.id, 'sonar', config.GET_SONAR, config.SNR_POLL),
-        sensors.make_spawn_command(self.id, 'network', config.GET_NETWORK, config.NET_POLL)
+        sensors.make_spawn_command(self.id, 'network', config.GET_NETWORK, config.NET_POLL, packet_size=2**16)
         ]
 
         if kwargs.get('procs',True):
@@ -145,6 +152,11 @@ class Agent:
         self.producer = udp.producer()
         self.consumer = udp.consumer()
 
+        #time of last broadcasting of missing values
+        self.last_missing_broadcast_time = 0
+
+
+
 
     def draw_self(self):
         """
@@ -190,6 +202,7 @@ class Agent:
     def draw_others(self):
         for other_id, data in self.other_agents.iteritems():
             mments = data['mments']
+            target = data['target']
             last_mment_key = max(mments.keys())
             last_mment = mments[last_mment_key]
             x,y = last_mment[:2]
@@ -213,6 +226,17 @@ class Agent:
             cir.setOutline(color)
             cir.draw(self.win)
 
+            #draw the target
+            if target is not None:
+                pos,val = target
+                if pos is not None:
+                    x,y = pos
+                    x *= config.CONTROL_PPM
+                    y *= config.CONTROL_PPM
+                    cir = g.Circle(g.Point(x,y), 0.5*config.CONTROL_PPM)
+                    cir.setFill('green')
+                    cir.setOutline('black')
+                    cir.draw(self.win)
 
     def get_latest_gps(self):
         """
@@ -363,29 +387,12 @@ class Agent:
 
         #now we have the heads and tails of all others and self
         ret = []
-#        print('self_last',len(self_last))
         ret.extend(self_last)
-#        print('self_tail',len(self_tail))
         ret.extend(self_tail)
         for other_tail, other_last in zip(other_tail, other_last):
             ret.extend(other_last)
-#            print('other_last',len(other_last))
             ret.extend(other_tail)
-#            print('other_tail',len(other_tail))
         return ret
-
-        #old code for when you want mments from just self.
-#        if len(self.measurements) > enough:
-#            #always take the last 20 with some skip
-#            skip_last = 3
-#            take_last *= skip_last
-#            res = self.measurements[-take_last::skip_last]
-#            skip = np.round((len(self.measurements)-len(res)) / enough)
-#            skip = max(1,skip)
-#            res.extend(self.measurements[::int(skip)])
-#            return res
-#        else:
-#            return self.measurements
 
 
     def generate_targets(self):
@@ -418,10 +425,12 @@ class Agent:
         #means and std devs. of candidate points given all measurements
         means, stds = self.gp.regress(candidates)
 
-        combined = zip(candidates, means, stds)
-
         #prevent going to 'explored' points, collect the unexplored ones
+        combined = zip(candidates, means, stds)
         unexplored = filter(lambda c: c[2] > config.MIN_STD, combined)
+
+        #TODO filter points based on known targets of other agents too.
+
         if unexplored is not None and len(unexplored) > 0:
             #extract the points only from the triples of (candidate, mean, std)
             target_points = zip(*unexplored)[0]
@@ -501,7 +510,7 @@ class Agent:
 
         print('[I] chosen std target',target_stds[best_point])
 
-        return targets[best_point]
+        return targets[best_point], values[best_point]
 
 
     def try_setting_target(self):
@@ -517,7 +526,7 @@ class Agent:
         #do we have enough targets to make a decision?
         if targets is not None and len(targets) >= config.MIN_UNEXPLORED:
             #we have enough targets, choose one and set it
-            self.target = self.choose_target(targets)
+            self.target, self.target_value = self.choose_target(targets)
             #reset the radii in case they were increased for this particular search
             self.start_range = config.DEFAULT_START_RANGE
             self.end_range = config.DEFAULT_END_RANGE
@@ -536,6 +545,7 @@ class Agent:
     def broadcast_latest_measurement(self):
         """
         broadcasts the latest measurement with known depth, position and velocity
+        also adds bcast the current target so others can avoid selecting the same target
         """
         #do we even have a measurement yet?
         if len(self.measurements) < 1:
@@ -561,7 +571,8 @@ class Agent:
         self.broadcast({'from':self.id,
                         'bcast_type':'mment',
                         'pos':pos,
-                        'id':id})
+                        'id':id,
+                        'target':[self.target,self.target_value]})
         return pos,id
 
 
@@ -595,7 +606,9 @@ class Agent:
         #last known mment id
         last = max(ids)
         #given the last measurement id, we -should- have the entire range of measurements
-        ideal_ids = set(range(last))
+        #except 0th one. That is borked for some reason, cba to find out why
+        #not critical at all.
+        ideal_ids = set(range(1,last))
         #missing ids are the difference between ideal and existing
         missing = ideal_ids.difference(ids)
 
@@ -610,16 +623,36 @@ class Agent:
         The situation where we know of an agents id but have NO mments from it is
         not handled. Assuming we 'know' of agents first when we hear a measurement from
         them. Which should be very frequent when they are in range.
+
+        if after broadcasting, a listening agent explodes with a pickle error,
+        do what you did for filling here.
         """
+        #should we bcast now?
+        dt = time.time() - self.last_missing_broadcast_time
+        if dt < config.MISSING_INTERVAL:
+            #nope
+            return
+        #yup
         for other_agent in self.other_agents.values():
             missing,last = self.missing_mments_other(other_agent['id'])
             if missing is not None and len(missing) > 0:
                 #we are missing some stuff, broadcast this fact
+                #set udp receive buffer to max (64k) and send large but few packets
+                #instead. use the fill type for that. do not send the whole thing
+                #as a single datagram.
                 self.broadcast({'from':self.id,
                                 'bcast_type':'missing',
                                 'missing_from':other_agent['id'],
                                 'missing':missing,
                                 'last':last})
+
+                print('[I] Bcasted missing values for '+\
+                        other_agent['id']+':'+\
+                        str(len(missing)))
+                print('###missing;',missing)
+
+        #record the time of bcast
+        self.last_missing_broadcast_time = time.time()
 
 
     def broadcast_filling(self, missing_from, missing, last):
@@ -637,16 +670,9 @@ class Agent:
             #missing data from this, send self data
             for mment_id in missing:
                 #self measurements are id-indexed
-                xyd = self.measurements[mment_id]
-                mment = (xyd[0],xyd[1],-1,-1,xyd[2]) # velocities are not stored, add filler
+                mment = self.measurements[mment_id]
                 fill.append([mment_id,mment])
 
-            if max(missing) < self.m_ids[-1]:
-                #the other guy doesnt know what its even missing
-                for i in range(max(missing),self.m_ids[-1]):
-                    xyd = self.measurements[i]
-                    mment = (xyd[0],xyd[1],-1,-1,xyd[2]) # velocities are not stored, add filler
-                    fill.append([i,mment])
         else:
             #missing data from an other agent that we might know about
             other_agent = self.other_agents.get(missing_from)
@@ -662,17 +688,32 @@ class Agent:
                         fill.append([mment_id,mment])
                     #if we did not, nothing to do
 
-
         #broadcast this filling data, hope the other guy(s) read it
-        #can't broadcast the entire thing in one go, pickle explodes. even when
-        #I converted it to a string
-        #so bcast every single mment as if it was coming from the agent itself.
-        #basically spoof the other agent
+        #set udp receive buffer to max (64k) and send large but few packets
+        #instead. use the fill type for that.
+        partial = []
         for id,mment in fill:
-            self.broadcast({'from':missing_from,
-                            'bcast_type':'mment',
-                            'pos':mment,
-                            'id':id})
+            if len(partial) < 10:
+                #truncate the coords of the mment, no need to send picometers when
+                #gps has meters worth of inaccuracies.
+                #also avoid float problems by converting to strings instead
+                x = str(mment[0])[:4]
+                y = str(mment[1])[:4]
+                d = str(mment[2])[:6]
+                strmment = [x,y,d]
+                partial.append([id,strmment])
+            else:
+                self.broadcast({'from':self.id,
+                                'fill_to':missing_from,
+                                'bcast_type':'fill',
+                                'fill':partial})
+                partial = []
+        #bcast whatever is left in partial
+        self.broadcast({'from':self.id,
+                        'fill_to':missing_from,
+                        'bcast_type':'fill',
+                        'fill':partial})
+
 
 
 
@@ -706,46 +747,50 @@ class Agent:
                         #string id of agent sending the broadcast
                         other_id = sensor_value.get('from')
 
-                        #broadcasts have types 'missing' and 'mment' ////not or 'fill'
+                        #broadcasts have types 'missing' and 'mment' or 'fill'
                         bcast_type = sensor_value.get('bcast_type')
 
-#                        #handle filling broadcasts.
-#                        #these are bcasts that will fill some gap in measurements of some agent
-#                        #it might not be FOR this agent, but this agent might fill a few holes
-#                        #here and there maybe.
-#                        if bcast_type == 'fill':
-#                            #ignore self-broadcasts
-#                            if other_id is not None and other_id != self.id:
-#                                fill_to = sensor_value.get('fill_to')
-#                                fillstr = sensor_value.get('fill')
-#
-#                                #convert the string back to a list of tuples (id,meas.)
-#                                lines = fillstr.split('\n')
-#                                fill = []
-#                                for line in lines:
-#                                    #sanity
-#                                    if len(line) < 1:
-#                                        continue
-#                                    parts = line.split(',')
-#                                    m = (parts[0], (float(parts[1]),float(parts[2]),float(parts[3]),float(parts[4]),float(parts[5])))
-#                                    fill.append(m)
-#
-#
-#                                #which agent does this data belong to?
-#                                other_agent = self.other_agents.get(fill_to)
-#                                if other_agent is None:
-#                                    #its an agent we havent met before!
-#                                    new_agent = {'id':fill_to, 'mments':{}}
-#                                    #record this new agent
-#                                    self.other_agents[other_id] = new_agent
-#
-#                                #we know this guy. for sure.
-#                                other_agent = self.other_agents.get(fill_to)
-#                                for m_id,m in fill:
-#                                    #fill in the measurement map of this agent
-#                                    other_agent['mments'][m_id] = m
+#handle filling broadcasts.
+#these are bcasts that will fill some gap in measurements of some agent
+#it might not be FOR this agent, but this agent might fill a few holes
+#here and there maybe.
+                        if bcast_type == 'fill':
+                            #ignore self-broadcasts
+                            if other_id is not None and other_id != self.id:
+                                fill_to = sensor_value.get('fill_to')
+                                strfill = sensor_value.get('fill')
 
+                                fill = []
+                                #convert the str'ified values to back to floats
+                                for id,mment in strfill:
+                                    if mment[0] == 'None':
+                                        #gps can be None, new sonar arrived before gps
+                                        x = None
+                                        y = None
+                                    else:
+                                        x = float(mment[0])
+                                        y = float(mment[1])
 
+                                    if mment[2]=='None':
+                                        #depth can be None, new gps arrived before sonar
+                                        d = None
+                                    else:
+                                        d = float(mment[2])
+                                    fill.append([id,[x,y,d]])
+
+                                #which agent does this data belong to?
+                                other_agent = self.other_agents.get(fill_to)
+                                if other_agent is None:
+                                    #its an agent we havent met before!
+                                    new_agent = {'id':fill_to, 'mments':{}}
+                                    #record this new agent
+                                    self.other_agents[other_id] = new_agent
+
+                                #we know this guy. for sure.
+                                other_agent = self.other_agents.get(fill_to)
+                                for m_id,m in fill:
+                                    #fill in the measurement map of this agent
+                                    other_agent['mments'][m_id] = m
 
 
                         #handle missing value broadcasts
@@ -764,6 +809,8 @@ class Agent:
                             bcast_mment = sensor_value.get('pos')
                             #measurement id, a simple sequence number for later diffing
                             bcast_m_id = sensor_value.get('id')
+                            #current target and value of the agent
+                            tgt = sensor_value.get('target')
 
                             #care about bcasts only from others
                             if other_id is not None and other_id != self.id:
@@ -782,12 +829,15 @@ class Agent:
                                     if other_agent is None:
                                         #we dont have a record for this agent, make a new one
                                         #all we need is an id and the measurements of that agent
-                                        new_agent = {'id':other_id, 'mments':{bcast_m_id:bcast_mment}}
+                                        new_agent = {'id':other_id,
+                                                     'mments':{bcast_m_id:bcast_mment},
+                                                     'target':tgt}
                                         #record this new agent
                                         self.other_agents[other_id] = new_agent
                                     else:
                                         #we already know about this agent, update its measurements
                                         other_agent['mments'][bcast_m_id] = bcast_mment
+                                        other_agent['target'] = tgt
 
                     if sensor_type == 'gps':
                         #velocity and heading from gps
@@ -836,7 +886,7 @@ class Agent:
         self.broadcast_missing()
 
         ######################################################################
-        # controls
+        # key controls
         ######################################################################
         key = self.win.checkKey()
         #end control

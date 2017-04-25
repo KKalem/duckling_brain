@@ -69,13 +69,12 @@ def msgs_to_self(addr, consumer):
     returns a list of messages received by the given consumer, addressed to 'id'
     """
     all_received = []
-    packet = consumer.receive()
+    packet = consumer.receive(size=65536)
     while packet is not None:
         ip_addr, data = packet
         if data['to'] == addr:
             all_received.append(data['data'])
-        packet = consumer.receive()
-#    print('msgs_to_self',addr,all_received)
+        packet = consumer.receive(size=65536)
     return all_received
 
 def msg(to,data):

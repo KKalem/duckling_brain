@@ -16,8 +16,8 @@ AGENT_SHAPE_RADIUS = 1.5
 #agent head shape radius
 AGENT_HEAD_RADIUS = 0.5
 #max forward speed and angular speeds
-AGENT_MAX_V = 1.5 #m/s 1.5 normal
-AGENT_MAX_W = 30. #degrees 15 normal
+AGENT_MAX_V = 5 #m/s 1.5 normal
+AGENT_MAX_W = 60. #degrees 15 normal
 
 
 ###############################################################################
@@ -145,6 +145,9 @@ PAINT_EXPLORED = True
 PAINT_UNEXPLORED = False
 
 #should the agent ignore broadcasts that are far away?
-SIMULATE_NETWORK_BREAKAGE = False
+SIMULATE_NETWORK_BREAKAGE = True
 #range to start ignoring messages
 NETWORK_RANGE = 50
+
+#time to wait between broadcasting missing values in seconds
+MISSING_INTERVAL = 1

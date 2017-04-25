@@ -21,7 +21,7 @@ class PureSensor:
     Relays the relevant info to its agent
     Requests data all the time
     """
-    def __init__(self, sensor_type, id, request_sentence, poll_rate):
+    def __init__(self, sensor_type, id, request_sentence, poll_rate, packet_size=1024):
         #the sensor will receive readings from the body
         self.body_addr = id+'-body'
         #and send the readings when they arrive to the agent
@@ -39,6 +39,10 @@ class PureSensor:
         self.poll_rate = poll_rate
         self.last_poll = time.time()
         self.first_poll = True
+
+        #packet size the udp listener will read
+        #set to large (max 64k) for large expected packets
+        self.packet_size = packet_size
 
         #comms channel with body and agent
         self.p = udp.producer()
@@ -71,7 +75,7 @@ class PureSensor:
             #check all responses over the pipe
             while response is None:
                 #receive some packet
-                packet = self.c.receive()
+                packet = self.c.receive(size=self.packet_size)
                 #did we receive anything?
                 if packet is not None:
                     addr, data = packet
@@ -92,7 +96,7 @@ class PureSensor:
                 self.p.send(u.msg(self.agent_addr, to_agent))
 
 
-def make_spawn_command(id, sensor_type, request_sentence, poll_rate):
+def make_spawn_command(id, sensor_type, request_sentence, poll_rate, packet_size=1024):
     """
     convenince function to generate the command string for pexpect to run
     """
@@ -101,7 +105,8 @@ def make_spawn_command(id, sensor_type, request_sentence, poll_rate):
             str(id),
             str(sensor_type),
             str(request_sentence),
-            str(poll_rate)]
+            str(poll_rate),
+            str(packet_size)]
 
 if __name__=='__main__':
     try:
@@ -109,16 +114,18 @@ if __name__=='__main__':
         type = sys.argv[2]
         sentence = sys.argv[3]
         poll_rate = float(sys.argv[4])
+        packet_size=int(sys.argv[5])
     except:
         #just for debugging
         id = '0'
         type = 'gps'
         sentence = 'get_gps'
         poll_rate = 0.1
+        packet_size=1024
 
     try:
         print('[I] Running '+type)
-        sensor = PureSensor(type, id, sentence, poll_rate)
+        sensor = PureSensor(type, id, sentence, poll_rate, packet_size)
         sensor.run()
     except:
         traceback.print_exc(file=sys.stderr)
