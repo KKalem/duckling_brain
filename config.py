@@ -11,6 +11,8 @@ Bunch of global values for other stuff to read from.
 ###############################################################################
 #how many mobile agents will be simulated
 NUMBER_OF_AGENTS = 2
+#starting positions of agents in meters.
+INIT_POS = [[0,0],[0,5]]
 #agent shape radius, in meters
 AGENT_SHAPE_RADIUS = 1.5
 #agent head shape radius
@@ -19,6 +21,8 @@ AGENT_HEAD_RADIUS = 0.5
 AGENT_MAX_V = 5 #m/s 1.5 normal
 AGENT_MAX_W = 60. #degrees 15 normal
 
+
+SUFFIX = 'nowhite'
 
 ###############################################################################
 # Simulation
@@ -95,15 +99,13 @@ GET_ENERGY = 'get_nrg'
 GET_SONAR = 'get_snr'
 GET_NETWORK = 'get_net'
 
-#SET_TARGET = 'set_tgt'
-
 ###############################################################################
 # colormap for the displays
 ###############################################################################
 COLORMAP_FILE = 'colormap.matrix'
 DEPTHMAP_FILE = 'depthmap.png'
 DEPTHMAP_BASE = 1
-DEPTHMAP_SMOOTHING = 1
+DEPTHMAP_SMOOTHING = 4
 
 #depth range of the seabed. negative depth = land above water
 DEPTHMAP_MINDEPTH = -10
@@ -112,7 +114,7 @@ DEPTHMAP_MAXDEPTH = 50
 #distance limit to record measurements for agents. Not moving or moving too slowly
 #causes instabilities for GP
 # in meters
-DISTANCE_THRESHOLD = 1.
+DISTANCE_THRESHOLD = 0.3
 
 #a directory to save agent traces
 TRACE_DIR = 'traces/'
@@ -125,9 +127,8 @@ TARGET_ANGLE_THRESHOLD = 0.1
 #number of measurements expected to start using gp
 MEASUREMENT_COUNT_THRESHOLD = 5
 
-#min. amount of std. to consider a point 'unexplored'
-#0.02 is about the same as a point with a measurement right next to it
-MIN_STD = 0.15
+#min. amount of std.dev. to consider a point 'unexplored'
+MIN_STD = 0.35
 
 #min number of points to expect to consider choosing one
 MIN_UNEXPLORED = 5
@@ -145,9 +146,21 @@ PAINT_EXPLORED = True
 PAINT_UNEXPLORED = False
 
 #should the agent ignore broadcasts that are far away?
-SIMULATE_NETWORK_BREAKAGE = True
+SIMULATE_NETWORK_BREAKAGE = False
 #range to start ignoring messages
-NETWORK_RANGE = 50
+NETWORK_RANGE = 10
 
 #time to wait between broadcasting missing values in seconds
-MISSING_INTERVAL = 1
+MISSING_INTERVAL = 5
+#dont flood udp buffers with the same mment, this is for 'real-time' bcasting
+#of x,y,vx,vy,d
+MMENT_INTERVAL = 0.5
+
+#for simple rectangle polygon bounds for the agents to stay inside
+#in meters
+SAFETY_RECT = 1
+
+#allowed proximity of agent targets to each other when searching for
+#the next point to go. in meters.
+TARGET_PROXIMITY_LIMIT = 5
+

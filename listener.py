@@ -10,17 +10,21 @@ A general broadcast listener for debugging purposes
 
 import udp
 import util as u
+import time
 
 c = udp.consumer()
 while True:
-    messages = u.msgs_to_self('0',c)
-    if len(messages) > 0:
-        for message in messages:
-            sensor_type = message.get('type')
-            sensor_value = message.get('value')
-            if sensor_value is not None and sensor_type is not None:
-                if sensor_type == 'network':
-                    print sensor_value
+    time.sleep(0.1)
+    res = c.receive(size=65535)
+    if res is not None:
+        ip,data = res
+        if data is not None and type(data)==type({1:1}):
+            data = data.get('data')
+            if data is not None and type(data)==type({1:1}):
+                sensortype = data.get('type')
+                if sensortype is not None:
+                    if sensortype=='network':
+                        print data.get('value')
 
 
 

@@ -133,10 +133,12 @@ if __name__=='__main__':
             #agent body
             strid = str(i)
             body = DynamicBody(id = strid, depthmap = depthmap)
+            body.state.x = config.INIT_POS[i][0]
+            body.state.y = config.INIT_POS[i][1]
             agent_bodies[strid] = body
 
             #shape of the body
-            shape = g.Circle(g.Point(body.state.x, body.state.y), config.AGENT_SHAPE_RADIUS*config.PPM)
+            shape = g.Circle(g.Point(body.state.x*config.PPM, body.state.y*config.PPM), config.AGENT_SHAPE_RADIUS*config.PPM)
             shape.setFill('red')
             shape.draw(win) #draw this, it will be moved
             agent_shapes[strid] = shape

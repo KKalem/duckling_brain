@@ -77,7 +77,7 @@ class Agent:
         #square side = 2a, centered at 0,0
         a = config.WINDOW_METERS/2.
         #safety distance to shrink
-        s = 10.
+        s = config.SAFETY_RECT
         rect = [[a-s, a-s],
                 [-a+s, a-s],
                 [-a+s, -a+s],
@@ -136,7 +136,7 @@ class Agent:
 
             #some debug text to display on the control window
             self.debugtext = g.Text(g.Point(-config.CONTROL_WIN_SIZE/2.+70,0),'No-text')
-            self.debugtext.draw(self.win)
+#            self.debugtext.draw(self.win)
 
             #draw the bounding polygon
             rect_g = map(lambda l: g.Point(l[0]*config.CONTROL_PPM, l[1]*config.CONTROL_PPM), self.bounds)
@@ -152,8 +152,9 @@ class Agent:
         self.producer = udp.producer()
         self.consumer = udp.consumer()
 
-        #time of last broadcasting of missing values
+        #time of last broadcasts
         self.last_missing_broadcast_time = 0
+        self.last_mment_broadcast_time = 0
 
 
 
@@ -175,8 +176,8 @@ class Agent:
             # draw the gps values on the display
             x *= config.CONTROL_PPM
             y *= config.CONTROL_PPM
-            vx *= 20.
-            vy *= 20.
+            vx *= 40.
+            vy *= 40.
             l = g.Line(g.Point(x,y),g.Point(x+vx,y+vy))
             l.setArrow('last')
             l.draw(self.win)
@@ -186,7 +187,7 @@ class Agent:
             cir = g.Circle(g.Point(x,y), 2*config.CONTROL_PPM)
             color = g.color_rgb(255-(d*4),150, d*4)
             cir.setFill(color)
-            cir.setOutline(color)
+            cir.setOutline('red')
             cir.draw(self.win)
 
             if self.target is not None:
@@ -211,8 +212,8 @@ class Agent:
             # draw the gps values on the display
             x *= config.CONTROL_PPM
             y *= config.CONTROL_PPM
-            vx *= 20.
-            vy *= 20.
+            vx *= 40.
+            vy *= 40.
             if vx>=0 and vy>=0:
                 l = g.Line(g.Point(x,y),g.Point(x+vx,y+vy))
                 l.setFill('gray')
@@ -302,10 +303,9 @@ class Agent:
         other_mments = []
         other_ids = []
         for other_agent_map in self.other_agents.itervalues():
-            #mments have velcoities too, strip them out before use
             mments = other_agent_map['mments']
             other_ids.append(mments.keys())
-            mments = map(lambda m: (m[0],m[1],m[4]), mments.values()) #x,y,d
+            mments = map(lambda m: (m[0],m[1],m[2]), mments.values()) #x,y,d
             other_mments.append(mments)
             total_points += len(mments)
 
@@ -315,8 +315,6 @@ class Agent:
             ret.extend(self.measurements)
             for other in other_mments:
                 ret.extend(other)
-#            print('<enough',np.array(ret).shape)
-#            print(np.array(ret))
             return ret
 
         #there be more than enough measurements, gotta thin them down
@@ -420,6 +418,8 @@ class Agent:
             return None
 
         #fit the gp to current measurements, this fitted model will be used later
+        #re-make the gp object. band-aid trial. THIS FKIN WORKS, FFS SCIKIT.
+        self.gp = gp.GP()
         self.gp.fit(self.get_enough_measurements())
 
         #means and std devs. of candidate points given all measurements
@@ -429,16 +429,14 @@ class Agent:
         combined = zip(candidates, means, stds)
         unexplored = filter(lambda c: c[2] > config.MIN_STD, combined)
 
-        #TODO filter points based on known targets of other agents too.
-
         if unexplored is not None and len(unexplored) > 0:
             #extract the points only from the triples of (candidate, mean, std)
-            target_points = zip(*unexplored)[0]
-            targets.extend(target_points)
+            unexplored = zip(*unexplored)[0]
+            targets.extend(unexplored)
 
             ##### paint the map with points
             if config.PAINT_UNEXPLORED:
-                for pt, mean, std in unexplored:
+                for pt in unexplored:
                         c = g.Point(pt[0]*config.CONTROL_PPM,pt[1]*config.CONTROL_PPM)
                         c.setFill('white')
                         c.setOutline('white')
@@ -471,18 +469,42 @@ class Agent:
         path_stds = []
         target_stds = []
         start = time.time()
+        #actual paths as sepatate lists
+        paths = []
         #put all paths into a single list for GP to regress. Looping over paths
         #takes forever and is inefficient
-        paths = []
+        flat_paths = []
         path_lens = []
+        #known targets of other agents
+        other_targets = [other_agent['target'] for other_agent in self.other_agents.values()]
         for candidate in targets:
             dist = gm.euclid_distance(current_pos, candidate)
             path = gm.subdividePath([current_pos, candidate], int(dist))
-            paths.extend(path)
-            path_lens.append(len(path))
+            #we dont want paths that will go near a known target of another agent
+            too_close = False
+            for point in path:
+                for other_target, other_target_value in other_targets:
+                    if other_target is None or other_target_value == -1:
+                        continue
+                    dist = gm.euclid_distance(point, other_target)
+                    if dist < config.TARGET_PROXIMITY_LIMIT:
+                        too_close = True
+                        break
+                if too_close:
+                    break
 
-        #regress for all paths at once
-        all_means, all_stds = self.gp.regress(paths)
+            if not too_close:
+                flat_paths.extend(path)
+                paths.append(path)
+                path_lens.append(len(path))
+
+        if len(flat_paths) > 0:
+            #regress for all paths at once
+            all_means, all_stds = self.gp.regress(flat_paths)
+        else:
+            #no possible paths found
+            return None,-1
+
 
         #separate the paths again
         for i in range(len(path_lens)):
@@ -497,9 +519,15 @@ class Agent:
             target_stds.append(stds[-1]) #last one is the candidate always
         print('[I] took '+str(time.time()-start)+' seconds for path stds')
 
+        #once the paths are filtered, find out the remaining targets
+        targets = []
+        for path in paths:
+            targets.append(path[-1])
+
+        #TODO filter out paths that go tru land too
+
         #time to reach these candidate points
         times = self.time_to_reach(current_pos, targets)
-
         times = np.array(times)
         path_stds = np.array(path_stds)
         target_stds = np.array(target_stds)
@@ -527,6 +555,8 @@ class Agent:
         if targets is not None and len(targets) >= config.MIN_UNEXPLORED:
             #we have enough targets, choose one and set it
             self.target, self.target_value = self.choose_target(targets)
+            if self.target is None:
+                return False
             #reset the radii in case they were increased for this particular search
             self.start_range = config.DEFAULT_START_RANGE
             self.end_range = config.DEFAULT_END_RANGE
@@ -551,6 +581,11 @@ class Agent:
         if len(self.measurements) < 1:
             return None, None
 
+        #try not to flood the udp buffers
+        dt = time.time() - self.last_mment_broadcast_time
+        if dt < config.MMENT_INTERVAL:
+            return
+
         #search for the latest complete measurement
         gps = None
         sonar = None
@@ -561,7 +596,7 @@ class Agent:
             idx += 1
             #got that many measurements?
             if len(self.measurements) <= idx:
-                return None, None
+                return
             m = self.measurements[-idx]
             id = self.m_ids[-idx]
             gps = m[:2]
@@ -573,7 +608,8 @@ class Agent:
                         'pos':pos,
                         'id':id,
                         'target':[self.target,self.target_value]})
-        return pos,id
+
+        self.last_mment_broadcast_time = time.time()
 
 
     def missing_mments_other(self, other_id):
@@ -649,7 +685,6 @@ class Agent:
                 print('[I] Bcasted missing values for '+\
                         other_agent['id']+':'+\
                         str(len(missing)))
-                print('###missing;',missing)
 
         #record the time of bcast
         self.last_missing_broadcast_time = time.time()
@@ -709,10 +744,13 @@ class Agent:
                                 'fill':partial})
                 partial = []
         #bcast whatever is left in partial
-        self.broadcast({'from':self.id,
-                        'fill_to':missing_from,
-                        'bcast_type':'fill',
-                        'fill':partial})
+        if len(partial) > 0:
+            self.broadcast({'from':self.id,
+                            'fill_to':missing_from,
+                            'bcast_type':'fill',
+                            'fill':partial})
+
+        print('[I] Bcasted filling values for: '+missing_from+':'+str(len(fill)))
 
 
 
@@ -1011,10 +1049,27 @@ class Agent:
         """
         save the gps and sonar measurements to a file for reasons
         """
-        with open(config.TRACE_DIR+self.id+'_trace','w') as f:
+        filename=config.TRACE_DIR+self.id+'_trace_'+config.SUFFIX
+        with open(filename,'w') as f:
             for x,y,d in self.measurements:
                 f.write(str(x)+','+str(y)+','+str(d)+'\n')
-        print('[I] trace saved to; '+config.TRACE_DIR+self.id+'_trace')
+        print('[I] trace saved to; '+filename)
+#        self.save_other_traces()
+
+    def save_other_traces(self):
+        """
+        save the measurements from others
+        """
+        filename = config.TRACE_DIR+self.id+'_trace_others_'+config.SUFFIX
+        with open(filename,'w') as f:
+            for agent in self.other_agents.values():
+                ms = agent.get('mments')
+                if ms is None or len(ms) < 1:
+                    continue
+
+                for x,y,d in ms.values():
+                    f.write(str(x)+','+str(y)+','+str(d)+'\n')
+        print('[I] others measurements saved to; '+filename)
 
 
 if __name__=='__main__':

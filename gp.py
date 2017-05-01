@@ -19,14 +19,15 @@ import config
 import time
 
 class GP:
-    def __init__(self, length_scale = 5., nu=2.5, noise_level=0.1):
+    def __init__(self, **kwargs):
         """
         inits the gpr, no ftting done here
         """
-        matern = kernels.Matern(length_scale = length_scale, nu = nu)
-        white = kernels.WhiteKernel(noise_level = noise_level)
-#        rbf = kernels.RBF(length_scale=length_scale)
-        self.gpr = GaussianProcessRegressor(kernel=matern+white, n_restarts_optimizer=15)
+        kernel = kernels.ConstantKernel(1)
+        kernel += kernels.Matern(length_scale = 50, nu = 2.5)
+        kernel += kernels.WhiteKernel(noise_level = 0.001)
+#        kernel += kernels.RBF(length_scale=1)
+        self.gpr = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=15)
         #TODO tune/play with everything above
 
     def fit(self, measurements):
@@ -40,7 +41,8 @@ class GP:
         X = measurements[:,:2] #positions
         Y = measurements[:,-1] #sonars
         #normalize the depth values
-        Y = Y/float(np.max(Y)) - 0.5
+#        Y = Y/float(np.max(Y)) - 0.5
+        Y = u.scale_range(Y, 0, 1)
 
         start = time.time()
         self.gpr.fit(X,Y)
@@ -107,15 +109,16 @@ class GP:
             X = measurements[:,:2] #positions
             Y = measurements[:,-1] #sonars
             #normalize the depth values
-            Y = Y/float(np.max(Y)) - 0.5
-            ax.plot3D(X[:,0], X[:,1], Y, color='red')
+#            Y = Y/float(np.max(Y)) - 0.5
+            Y = u.scale_range(Y, 0, 1)
+            ax.plot3D(X[:,0], X[:,1], Y, '.', color='red')
 
         plt.xlabel('x')
         plt.ylabel('y')
         if kwargs.get('show',True):
             plt.show(block=False)
 
-        return fig
+        return fig, means_z, stds_z
 
 
 
@@ -183,22 +186,55 @@ class GP:
 
 if __name__=='__main__':
     import util
-    m = util.load_trace('1')
-    m = np.array(m)
+    k = -1
+    m0 = util.load_trace('0')[:k]
+    m1 = util.load_trace('1')[:k]
+    m0.extend(m1)
+    m = np.array(m0)
     gp = GP()
-    skip = 5
-    start = time.time()
-    plt.ioff()
-    last_frame = len(m)
-    for frame in range(1,last_frame,skip):
-        gp.fit(m[0:frame:skip])
-    #    means, stds = gp.regress(targets)
-        fig = gp.show_surface(m[0:frame:skip], show=False)
-        fig.savefig('etc/animation/'+str(frame)+'.png')
-        print(frame, last_frame)
-#        t = time.time()-start
-#        s = len(m[::skip])
-#        print('[GP] total time;',t)
-#        print('[GP] total samples;',s)
+    skip = 2
+    gp.fit(m[::skip])
+    fig, means, stds = gp.show_surface(m[::skip])
 
-#    gp.save_matrix(suffix='_14Apr')
+#    gp.save_matrix(suffix='_May1')
+
+
+
+#1D tests and stuff below here
+
+
+#    m = [[0,10],[10,15],[20,30]]
+#    cnt = 10
+#    mx = np.linspace(0,50,cnt)
+#    my = map(lambda x: np.sin(x), mx)
+#    my = [np.random.rand(1) for i in mx]
+#    my[10:20] = [10 for i in range(10,20)]
+
+
+#    trace = np.array(util.load_trace('0'))
+#    my = list(trace[:,2])[::4]
+#    mx = np.linspace(0,len(my),len(my))
+#
+#    m = zip(mx,my)
+#    m = np.array(m)
+#
+#    matern = kernels.Matern(length_scale = 20, nu = 2.5)
+#    white = kernels.WhiteKernel()
+##    rbf = kernels.RBF(length_scale=0.1)
+#    kernel = matern+white
+#    gpr = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=15)
+#    measurements = np.array(m) #make sure its an array now
+#    X = measurements[:,0] #positions
+#    X = X.reshape(-1,1)
+#    Y = measurements[:,1] #sonars
+##    Y = Y/float(np.max(Y))
+#    Y = u.scale_range(Y, 0, 1)
+#    gpr.fit(X,Y)
+#
+#    xs = np.linspace(-10,len(my)+10,2000)
+#    xs = xs.reshape(-1,1)
+#    means, stds = gpr.predict(xs,return_std = True)
+#    plt.plot(xs,means)
+#    plt.scatter(X,Y)
+#    plt.plot(xs,1.96*stds+means, color='g')
+#    plt.show()

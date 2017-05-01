@@ -9,6 +9,13 @@ from __future__ import print_function
 import numpy as np
 import config
 
+def scale_range(values, new_min, new_max):
+    org_min = np.min(values)
+    org_max = np.max(values)
+    org_range = org_max - org_min
+    new_range = new_max - new_min
+    return (((values - org_min) * new_range) / org_range) + new_min
+
 
 def make_circle_targets(center=[0,0], count=8, radii=[1]):
     """
@@ -27,7 +34,7 @@ def make_circle_targets(center=[0,0], count=8, radii=[1]):
 
 def load_trace(id):
     vals = []
-    with open(config.TRACE_DIR+id+'_trace','r') as f:
+    with open(config.TRACE_DIR+id+'_trace_'+config.SUFFIX,'r') as f:
         for line in f:
             parts = line.split(',')
             nones = filter(lambda p: p=='None' or p=='None\n', parts)
@@ -51,7 +58,7 @@ def float_format2(value):
     except:
         return '-'
 
-def load_colormap(filename):
+def load_colormap(filename, reverse=False):
         """
         loads a simple matrix file as a colormap into a numpy array
         """
@@ -60,6 +67,8 @@ def load_colormap(filename):
             for line in f:
                 c = [int(part) for part in line.split()]
                 v.append(c)
+        if reverse:
+            v = v[::-1]
         m = np.array(v)/255.
         return m
 

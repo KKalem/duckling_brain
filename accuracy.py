@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 import config
 import util as u
 
-suffix = '_14Apr'
+suffix = '_May1'
 # load the regressed map and the true map
 truth = np.load(config.TRACE_DIR+'/depthmap.npy')
 means = np.load(config.TRACE_DIR+'/means'+suffix+'.npy')
@@ -25,23 +25,16 @@ stds = np.load(config.TRACE_DIR+'/stds'+suffix+'.npy')
 m = u.load_trace('1')
 m = np.array(m)
 
-s = 10*config.PPM
-
-#slice the matrices into the area that the boat was allowed to operate in
-truth = truth[s:-s,s:-s]
-means = means[s:-s,s:-s]
-stds = stds[s:-s,s:-s]
+#s = 10*config.PPM
+#
+##slice the matrices into the area that the boat was allowed to operate in
+#truth = truth[s:-s,s:-s]
+#means = means[s:-s,s:-s]
+#stds = stds[s:-s,s:-s]
 
 
 #scale the normalized means
-o_min = np.min(means)
-o_max = np.max(means)
-n_min = np.min(m[:,2])
-n_max = np.max(m[:,2])
-o_range = o_max - o_min
-n_range = n_max - n_min
-
-predictions = (((means - o_min) * n_range) / o_range) + n_min
+predictions = u.scale_range(means, np.min(m[:,2]), np.max(m[:,2]))
 
 #squared error
 sqe = np.square(truth - predictions)
@@ -63,14 +56,16 @@ mats = [truth, predictions, stds, sqe, abe]
 cmaps = [colormap, colormap, 'Greens', 'Reds', 'Reds']
 titles = ['Ground truth seabed', 'Predicted seabed', 'Prediction variance','Squared error (mean='+str(mse)+')', 'Absolute error (mean='+u.float_format2(mae)+', median='+u.float_format2(medae)+')']
 
-for i in range(len(mats)):
+#for i in range(len(mats)):
+for i in range(5):
     plt.figure()
     plt.xlim(0,truth.shape[0])
     plt.ylim(0,truth.shape[0])
     plt.hold(True)
     plt.imshow(mats[i], cmap = cmaps[i])
     plt.colorbar()
-    plt.plot(m[:,0],m[:,1], color='magenta')
+    #FOR SOME REASON x-y is switched. /shrug
+    plt.plot(m[:,1],m[:,0], color='magenta')
     plt.title(titles[i])
     plt.hold(False)
     plt.show()

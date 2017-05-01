@@ -66,6 +66,10 @@ def plot_line(wall,**kwargs):
 
 
 def euclid_distance(pos1,pos2):
+    if pos1 is None:
+        print 'euclid distance; pos1 is None!'
+    if pos2 is None:
+        print 'euclid distance; pos2 is None!'
     return np.sqrt((pos2[0]-pos1[0])**2 + (pos2[1]-pos1[1])**2)
 
 # returns a line in the form y = mx+b, returns the m,b

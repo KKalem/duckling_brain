@@ -94,11 +94,12 @@ if __name__=='__main__':
     octaves = 5
     origin = 400
     base = 1
-    sigma = 10
+    sigma = 0
     min_depth = -10
     max_depth = 50
     colormap = mpl.colors.ListedColormap(u.load_colormap(config.COLORMAP_FILE))
     d = Depthmap(p_size, m_size, octaves, origin, base, sigma, min_depth, max_depth)
     plt.matshow(d.map, cmap = colormap, origin='lower')
     plt.colorbar()
+    plt.savefig('unsmoothed.pdf')
 #    d.save_depthmap()
