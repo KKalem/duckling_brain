@@ -19,10 +19,10 @@ AGENT_SHAPE_RADIUS = 1.5
 AGENT_HEAD_RADIUS = 0.5
 #max forward speed and angular speeds
 AGENT_MAX_V = 5 #m/s 1.5 normal
-AGENT_MAX_W = 60. #degrees 15 normal
+AGENT_MAX_W = 40. #degrees 15 normal
 
 
-SUFFIX = 'nowhite'
+SUFFIX = 'weighted_tahirovic_timeless'
 
 ###############################################################################
 # Simulation
@@ -32,7 +32,7 @@ UPDATE_FPS = 60.
 #display size in pixels
 WINDOW_SIZE = 600
 #display size in sim. meters
-WINDOW_METERS = 150. #1k final
+WINDOW_METERS = 100. #1k final
 #display size in inches of screen
 WINDOW_INCHES = 5.
 #window dpi
@@ -128,10 +128,10 @@ TARGET_ANGLE_THRESHOLD = 0.1
 MEASUREMENT_COUNT_THRESHOLD = 5
 
 #min. amount of std.dev. to consider a point 'unexplored'
-MIN_STD = 0.35
+MIN_STD = 0.13
 
 #min number of points to expect to consider choosing one
-MIN_UNEXPLORED = 5
+MIN_UNEXPLORED = 1
 
 #default values of smallest search donut
 DEFAULT_START_RANGE = 10
@@ -142,8 +142,9 @@ DEFAULT_CIRCLE_COUNT = 120
 SEARCH_INCREMENT = 20
 
 #a flag to allow agents to paint un/explored areas in their control windows
-PAINT_EXPLORED = True
+PAINT_EXPLORED = False
 PAINT_UNEXPLORED = False
+PAINT_TAHIROVIC = True
 
 #should the agent ignore broadcasts that are far away?
 SIMULATE_NETWORK_BREAKAGE = False
@@ -164,3 +165,14 @@ SAFETY_RECT = 1
 #the next point to go. in meters.
 TARGET_PROXIMITY_LIMIT = 5
 
+
+USE_TAHIROVIC = True
+# n x n matrix of sampled points.
+T_DENSITY = 80
+# use variance to weight the centroid for tahirovic?
+T_WEIGHTED = True
+#draw the centroid on the canvas?
+T_DRAW_CENTROID = True
+
+#discount points that will take longer to reach? this is the divider in utility func.
+CARE_ABOUT_TTR = False

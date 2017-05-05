@@ -188,15 +188,42 @@ if __name__=='__main__':
     import util
     k = -1
     m0 = util.load_trace('0')[:k]
-    m1 = util.load_trace('1')[:k]
-    m0.extend(m1)
+#    m1 = util.load_trace('1')[:k]
+#    m0.extend(m1)
     m = np.array(m0)
     gp = GP()
-    skip = 2
+    skip = 1
     gp.fit(m[::skip])
-    fig, means, stds = gp.show_surface(m[::skip])
+    fig, means, stds = gp.show_surface(m[::skip], show=False, grid_density=30)
 
-#    gp.save_matrix(suffix='_May1')
+    gp.save_matrix(suffix='_May5_'+config.SUFFIX)
+
+#animation
+#    plt.ioff()
+#    done = False
+#    i0 = 5
+#    i1 = 5
+#    frame = 0
+#    frame_skip = 3
+#    m0 = util.load_trace('0')
+#    m1 = util.load_trace('1')
+#    skip=2
+#    while not done:
+#        print 'frame',frame
+#        m = np.array(m0[:i0]+m1[:i1])[::skip]
+#        gp = GP()
+#        gp.fit(m)
+#        fig, means, stds = gp.show_surface(m, show=False)
+#        fig.savefig('animation/'+str(frame)+'.png')
+#        if i0+frame_skip < len(m0):
+#            i0 += frame_skip
+#        if i1+frame_skip < len(m1):
+#            i1 += frame_skip
+#
+#        if i0+frame_skip > len(m0) and i1+frame_skip > len(m1):
+#            done = True
+#        else:
+#            frame += 1
 
 
 

@@ -73,9 +73,9 @@ class DynamicBody:
         #init time
         self.last_time = time.time()
         #max turnation speed, degree per sec
-        self.max_turn = kwargs.get('max_turn', 15.)
+        self.max_turn = kwargs.get('max_turn', config.AGENT_MAX_W)
         #max forward speed.
-        self.max_speed = kwargs.get('max_speed', 1.5)
+        self.max_speed = kwargs.get('max_speed', config.AGENT_MAX_V)
 
         #the depth map of the world
         self.depthmap = kwargs.get('depthmap')
@@ -291,7 +291,7 @@ class DynamicBody:
         s.heading += s.turn *dt
 
         if s.accel > 0:
-            s.speed = 1.5
+            s.speed = self.max_speed
         else:
             s.speed = 0
 

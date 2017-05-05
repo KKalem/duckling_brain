@@ -15,22 +15,24 @@ import matplotlib.pyplot as plt
 import config
 import util as u
 
-suffix = '_May1'
+suffix = '_May5_'+config.SUFFIX
 # load the regressed map and the true map
 truth = np.load(config.TRACE_DIR+'/depthmap.npy')
 means = np.load(config.TRACE_DIR+'/means'+suffix+'.npy')
 stds = np.load(config.TRACE_DIR+'/stds'+suffix+'.npy')
 
 # load the measurement trace for min/max values
-m = u.load_trace('1')
-m = np.array(m)
+m0 = u.load_trace('0')
+#m1 = u.load_trace('1')
+#m = m0+m1
+m = np.array(m0)
 
-#s = 10*config.PPM
-#
-##slice the matrices into the area that the boat was allowed to operate in
-#truth = truth[s:-s,s:-s]
-#means = means[s:-s,s:-s]
-#stds = stds[s:-s,s:-s]
+s = int(config.SAFETY_RECT*config.PPM)
+
+#slice the matrices into the area that the boat was allowed to operate in
+truth = truth[s:-s,s:-s]
+means = means[s:-s,s:-s]
+stds = stds[s:-s,s:-s]
 
 
 #scale the normalized means
@@ -54,7 +56,7 @@ m[:,:2] += truth.shape[0]/2
 
 mats = [truth, predictions, stds, sqe, abe]
 cmaps = [colormap, colormap, 'Greens', 'Reds', 'Reds']
-titles = ['Ground truth seabed', 'Predicted seabed', 'Prediction variance','Squared error (mean='+str(mse)+')', 'Absolute error (mean='+u.float_format2(mae)+', median='+u.float_format2(medae)+')']
+titles = ['Ground truth seabed', 'Predicted seabed', 'Prediction std dev.','Squared error (mean='+str(mse)+')', 'Absolute error (mean='+u.float_format2(mae)+', median='+u.float_format2(medae)+')']
 
 #for i in range(len(mats)):
 for i in range(5):
@@ -62,10 +64,12 @@ for i in range(5):
     plt.xlim(0,truth.shape[0])
     plt.ylim(0,truth.shape[0])
     plt.hold(True)
-    plt.imshow(mats[i], cmap = cmaps[i])
+    if i==2:
+        plt.imshow(mats[i].T, cmap = cmaps[i])
+    else:
+        plt.imshow(mats[i], cmap = cmaps[i])
     plt.colorbar()
-    #FOR SOME REASON x-y is switched. /shrug
-    plt.plot(m[:,1],m[:,0], color='magenta')
+    plt.plot(m[:,0],m[:,1], color='magenta')
     plt.title(titles[i])
     plt.hold(False)
     plt.show()

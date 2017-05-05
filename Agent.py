@@ -19,6 +19,7 @@ import sys
 import traceback
 import time
 import numpy as np
+import matplotlib.pyplot as plt
 from subprocess import Popen
 
 
@@ -33,6 +34,8 @@ class Agent:
         initialize the agent, id defines the body it will control
         creates a small info and control window
         """
+        self.counter = 0 #temp
+
         #id and address of the agent. Should have a corresponding body and sensors
         self.id = id
         self.addr = self.id+'-agent'
@@ -78,11 +81,24 @@ class Agent:
         a = config.WINDOW_METERS/2.
         #safety distance to shrink
         s = config.SAFETY_RECT
-        rect = [[a-s, a-s],
+        rect = [[ a-s, a-s],
                 [-a+s, a-s],
-                [-a+s, -a+s],
-                [a-s,-a+s]]
+                [-a+s,-a+s],
+                [ a-s,-a+s]]
         self.bounds = kwargs.get('bounds',rect)
+
+        #generate a lattice of points inside the given polygon for later use
+        #the matrix should encompass the entire given polygonal area
+        self.inside_points = []
+        xmax,ymax = np.max(self.bounds,axis=0)
+        xmin,ymin = np.min(self.bounds,axis=0)
+
+        xs = np.linspace(xmin,xmax,config.T_DENSITY)
+        ys = np.linspace(xmin,xmax,config.T_DENSITY)
+        for x in xs:
+            for y in ys:
+                if gm.ptInPoly(self.bounds, [x,y]):
+                    self.inside_points.append([x,y])
 
 
         ######################################################################
@@ -119,7 +135,7 @@ class Agent:
         self.start_range = config.DEFAULT_START_RANGE
         self.end_range = config.DEFAULT_END_RANGE
         self.circle_count = config.DEFAULT_CIRCLE_COUNT
-        self.max_range = config.WINDOW_SIZE
+        self.max_range = gm.euclid_distance([xmax,ymax],[xmin,ymin])
 
         ######################################################################
         # display
@@ -463,8 +479,63 @@ class Agent:
         """
         returns the target point that is quickest to reach with the most std deviation
         """
-        current_pos = self.get_latest_gps()
+        if config.USE_TAHIROVIC:
+            #instead of following the variance from self, follow high variance point
+            #w/ respect to 'unexplored mean' point
+            #to find the mean of unexplored land, we must regress for the entire
+            #map and filter explored areas.
 
+            #use the std of each point as a weight
+            means, stds = self.gp.regress(self.inside_points)
+            #filter the unexplored points
+            unexplored = filter(lambda c: c[1] > config.MIN_STD, zip(self.inside_points, stds))
+            unexplored = zip(*unexplored)
+            unexplored_pts = np.array(unexplored[0])
+            unexplored_stds = np.array(unexplored[1])
+
+            if config.PAINT_TAHIROVIC:
+                #normalize means for painting
+                depth_colors = u.scale_range(means, 0,255)
+                for p,depth_color in zip(self.inside_points,depth_colors):
+                        center = g.Point(p[0]*config.CONTROL_PPM,p[1]*config.CONTROL_PPM)
+                        c = g.Circle(center,3)
+                        color = g.color_rgb(30,200, depth_color)
+                        c.setFill(color)
+                        c.setOutline(color)
+                        c.draw(self.win)
+
+                std_colors = u.scale_range(unexplored_stds, 0,255)
+                for p,std_color in zip(unexplored_pts,std_colors):
+                        center = g.Point(p[0]*config.CONTROL_PPM,p[1]*config.CONTROL_PPM)
+                        c = g.Circle(center,3)
+                        color = g.color_rgb(140,std_color,30)
+                        c.setFill(color)
+                        c.setOutline(color)
+                        c.draw(self.win)
+
+            if config.T_WEIGHTED:
+                pts_stds = map(lambda c: (c[0][0],c[0][1],c[1]), zip(unexplored_pts, unexplored_stds))
+                pts_stds = np.array(pts_stds)
+                xcentroid = np.sum(pts_stds[:,0]*pts_stds[:,2]) / np.sum(pts_stds[:,2])
+                ycentroid = np.sum(pts_stds[:,1]*pts_stds[:,2]) / np.sum(pts_stds[:,2])
+            else:
+                xcentroid,ycentroid = np.mean(unexplored_pts,axis=0)
+
+            #use the centroid for path calculations
+            path_root = [xcentroid,ycentroid]
+
+            if config.T_DRAW_CENTROID:
+                center = g.Point(xcentroid*config.CONTROL_PPM,ycentroid*config.CONTROL_PPM)
+                c = g.Circle(center,3)
+                c.setFill('orange')
+                c.draw(self.win)
+                print('[I] Centroid:'+str(path_root))
+        else:
+            #use current pos for paths
+            path_root = self.get_latest_gps()
+
+        #current pos of agent for time calcs.
+        current_pos = self.get_latest_gps()
         #the value of a point is all the values on the path to that point
         path_stds = []
         target_stds = []
@@ -477,9 +548,10 @@ class Agent:
         path_lens = []
         #known targets of other agents
         other_targets = [other_agent['target'] for other_agent in self.other_agents.values()]
+        #consider the candidates
         for candidate in targets:
-            dist = gm.euclid_distance(current_pos, candidate)
-            path = gm.subdividePath([current_pos, candidate], int(dist))
+            dist = gm.euclid_distance(path_root, candidate)
+            path = gm.subdividePath([path_root, candidate], int(dist))
             #we dont want paths that will go near a known target of another agent
             too_close = False
             for point in path:
@@ -526,18 +598,19 @@ class Agent:
 
         #TODO filter out paths that go tru land too
 
-        #time to reach these candidate points
-        times = self.time_to_reach(current_pos, targets)
-        times = np.array(times)
-        path_stds = np.array(path_stds)
-        target_stds = np.array(target_stds)
+        if config.CARE_ABOUT_TTR:
+            #time to reach these candidate points
+            times = self.time_to_reach(current_pos, targets)
+            times = np.array(times)
+            path_stds = np.array(path_stds)
+            target_stds = np.array(target_stds)
+            #value of the candidates. quickest most deviating point please
+            values = path_stds / times
+        else:
+            values = path_stds
 
-        #value of the candidates. quickest most deviating point please
-        values = path_stds / times
         best_point = np.argmax(values)
-
-        print('[I] chosen std target',target_stds[best_point])
-
+        print('[I] chosen target value',values[best_point])
         return targets[best_point], values[best_point]
 
 
@@ -561,14 +634,21 @@ class Agent:
             self.start_range = config.DEFAULT_START_RANGE
             self.end_range = config.DEFAULT_END_RANGE
             self.circle_count = config.DEFAULT_CIRCLE_COUNT
-            self.max_range = config.WINDOW_METERS
             return True
         else:
             #we dont have enough targets, increase search radius and pass
-            print('[I] Increasing search radius from',self.end_range)
+            print('[I] Increasing search radius from '+str(self.end_range)+
+                    ' to '+str(self.end_range + config.SEARCH_INCREMENT))
             self.start_range = self.end_range
             self.end_range += config.SEARCH_INCREMENT
             self.circle_count *= 2
+            if self.end_range >= self.max_range:
+                print('[I] Maximum radius achieved, no points found, going remote mode')
+                self.mode = 'remote'
+                self.start_range = config.DEFAULT_START_RANGE
+                self.end_range = config.DEFAULT_END_RANGE
+                self.circle_count = config.DEFAULT_CIRCLE_COUNT
+                return False
             return False
 
 
