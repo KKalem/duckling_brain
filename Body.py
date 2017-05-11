@@ -157,7 +157,6 @@ class DynamicBody:
     def get_net(self):
         dt = time.time() - self.last_times[config.GET_NETWORK]
         if dt > config.NET_FREQ:
-            #TODO proper network connections etc
 #            output = '###net-'+u.float_format2(time.time())
 #            self._to_agent_sensor('network', output)
             self.last_times[config.GET_NETWORK] = time.time()

@@ -1099,7 +1099,7 @@ class Agent:
                 else:
                     #we dont even have enough measurements to regress properly
                     #move the body forward until we do have enough measurements
-                    print('[I] Moving forward a little to get some measurements')
+#                    print('[I] Moving forward a little to get some measurements')
                     self.send_to_body('set_max_speed')
 
         g.update(config.UPDATE_FPS)

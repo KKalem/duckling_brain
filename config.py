@@ -24,6 +24,12 @@ AGENT_MAX_W = 40. #degrees 15 normal
 
 SUFFIX = 'weighted_tahirovic_timeless'
 
+#is the agent wokring in sim or on physical?
+#changes the communication stuffs mostly
+#from udp multicasts to tcp connections
+#if true, runs in sim.
+SIMULATION = True
+
 ###############################################################################
 # Simulation
 ###############################################################################

@@ -7,6 +7,7 @@ Created on Tue Mar  7 22:49:58 2017
 from __future__ import print_function
 
 import udp
+import tcp
 import config
 import util as u
 
@@ -21,7 +22,14 @@ class PureSensor:
     Relays the relevant info to its agent
     Requests data all the time
     """
-    def __init__(self, sensor_type, id, request_sentence, poll_rate, packet_size=1024):
+    def __init__(self,
+                 sensor_type,
+                 id,
+                 request_sentence,
+                 poll_rate,
+                 packet_size=1024,
+                 ip = '0.0.0.0',
+                 port = 0):
         #the sensor will receive readings from the body
         self.body_addr = id+'-body'
         #and send the readings when they arrive to the agent
@@ -48,6 +56,10 @@ class PureSensor:
         self.p = udp.producer()
         self.c = udp.consumer(blocking=0)
 
+        if not config.SIMULATION:
+            self.tcp = tcp.tcpJsonNmeaClient(ip, port,
+                                             self.sensor_type, self.addr)
+
     def run(self):
         """
         Requests and retrieves the relevant sensory data.
@@ -63,7 +75,10 @@ class PureSensor:
             if dt > self.poll_rate or self.first_poll:
                 #we can poll now, gogo
                 #request the relevant data
-                self.p.send(u.msg(self.body_addr,self.request_sentence))
+                if config.SIMULATION:
+                    self.p.send(u.msg(self.body_addr,self.request_sentence))
+                else:
+                    self.tcp.send(self.request_sentence)
                 self.last_poll = time.time()
                 self.first_poll = False
             else:
@@ -75,7 +90,10 @@ class PureSensor:
             #check all responses over the pipe
             while response is None:
                 #receive some packet
-                packet = self.c.receive(size=self.packet_size)
+                if config.SIMULATION:
+                    packet = self.c.receive(size=self.packet_size)
+                else:
+                    packet = self.tcp.receive(size=self.packet_size)
                 #did we receive anything?
                 if packet is not None:
                     addr, data = packet
@@ -122,10 +140,12 @@ if __name__=='__main__':
         sentence = 'get_gps'
         poll_rate = 0.1
         packet_size=1024
+        ip = '10.13.20.23'
+        port = 12
 
     try:
         print('[I] Running '+type)
-        sensor = PureSensor(type, id, sentence, poll_rate, packet_size)
+        sensor = PureSensor(type, id, sentence, poll_rate, packet_size, ip=ip, port=port)
         sensor.run()
     except:
         traceback.print_exc(file=sys.stderr)
