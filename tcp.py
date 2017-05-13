@@ -7,6 +7,7 @@ Created on Wed May 10 14:39:59 2017
 from __future__ import print_function
 
 import config as c
+import util as u
 
 #import sys
 import socket
@@ -44,7 +45,7 @@ import time
 def package_data(data, data_type='request'):
     """
     package the data into an nmea sentence
-    data type can be 'request' or 'goto'
+    data type can be 'request' or 'command'
     """
 
     if data_type == 'request':
@@ -53,8 +54,15 @@ def package_data(data, data_type='request'):
         if data == c.GET_SONAR:
             nmea = '$MSSON,*00\r\n'
     else:
-        #TODO implement NMEA'ing 'goto' command here
-        pass
+        #TODO implement NMEA'ing 'set_target' command here
+        if data.find('set_target') != -1:
+            #this is a set_target command
+            cmd,x,y = data.split(',')
+            nmea = '$MSSCP,,,'+x+','+y+',*00\r\n'
+
+        if data.find('$MSSTO') != -1:
+            nmea = data
+
 
     jason = {'SOURCE':'OZER',
              'TIME_UNIX':int(time.time()),
@@ -79,22 +87,24 @@ class tcpJsonNmeaClient():
         self.client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 #        self.client.settimeout(5)
         print('[S] Connecting to '+ip+':'+str(port))
-        self.client.connect((ip,port))
+        self.client.connect((ip,int(port)))
         print('[S] Connected')
 
 
         #these are the expected responses from the server for
         #each type of sensor
         sensor_NMEAS = {'gps':'MSGPS',
-                        'sonar':'MSSON'}
+                        'sonar':'MSSON',
+                        'agent':'NOTHING',
+                        'network':'NOTHING'}
         self.expected_NMEA = sensor_NMEAS[sensor_type]
 
         #for compliance
         self.sensor_addr = sensor_addr
 
-    def send(self,data):
+    def send(self,data,data_type='request'):
         #obvious
-        self.client.send(package_data(data))
+        self.client.send(package_data(data,data_type))
 
 
     def receive(self,size=1024):
@@ -131,14 +141,20 @@ class tcpJsonNmeaClient():
                 #make a packet for compliance
                 data = {'to':self.sensor_addr}
                 if nmea_type == '$MSGPS':
-                    #TODO or is it lon,lat instead?
-                    data['data'] = [float(parts[1]), #x
-                                    float(parts[2]), #y
-                                    float(parts[3]), #vx
-                                    float(parts[4])] #vy
+                    #TODO convert speed direction to vx vy
+                    heading = 360-float(parts[4])+90
+                    speed = float(parts[3])
+
+                    vx,vy = speed*u.cos(heading), speed*u.sin(heading)
+
+                    data['data'] = [float(parts[2]), #lat
+                                    float(parts[1]), #lon
+                                    vx,
+                                    vy]
+
 
                 if nmea_type == '$MSSON':
-                    data['data'] = float(parts[1]) #depth
+                    data['data'] = float(parts[2]) #depth
 
                 #addr is unused but expected
                 return 'dummy_addr',data

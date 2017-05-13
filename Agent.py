@@ -8,9 +8,9 @@ Created on Mon Mar  6 21:35:28 2017
 from __future__ import print_function
 
 import udp
+import tcp
 import config
 import util as u
-import graphics as g
 import sensors
 import geometry as gm
 import gp
@@ -19,9 +19,11 @@ import sys
 import traceback
 import time
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from subprocess import Popen
 
+if config.SIMULATION:
+    import graphics as g
 
 class Agent:
     """
@@ -39,6 +41,10 @@ class Agent:
         #id and address of the agent. Should have a corresponding body and sensors
         self.id = id
         self.addr = self.id+'-agent'
+
+        #ip:port of the physical body if available
+        self.body_ip = kwargs.get('body_ip')
+        self.body_port = kwargs.get('body_port')
 
         #keep track of agent time since conception
         self.time = 0.
@@ -105,13 +111,35 @@ class Agent:
         # sensor stuff
         ######################################################################
         #spawn commands for the sensor processes
-        #default packet size is 1024 bytes and is enough for everything but the network
-        #give the network proc the largest possible UDP packet size
+        #default packet size is 1024 bytes and is enough for everything
+        # but the network
+
         spawn_commands = [
-        sensors.make_spawn_command(self.id, 'gps', config.GET_GPS, config.GPS_POLL),
-        sensors.make_spawn_command(self.id, 'energy', config.GET_ENERGY, config.NRG_POLL),
-        sensors.make_spawn_command(self.id, 'sonar', config.GET_SONAR, config.SNR_POLL),
-        sensors.make_spawn_command(self.id, 'network', config.GET_NETWORK, config.NET_POLL, packet_size=2**16)
+        sensors.make_spawn_command(self.id,
+                                   'gps',
+                                   config.GET_GPS,
+                                   config.GPS_POLL,
+                                   ip = self.body_ip,
+                                   port = self.body_port),
+#        sensors.make_spawn_command(self.id,
+#                                   'energy',
+#                                   config.GET_ENERGY,
+#                                   config.NRG_POLL,
+#                                   ip = self.body_ip,
+#                                   port = self.body_port),
+        sensors.make_spawn_command(self.id,
+                                   'sonar',
+                                   config.GET_SONAR,
+                                   config.SNR_POLL,
+                                   ip = self.body_ip,
+                                   port = self.body_port),
+        sensors.make_spawn_command(self.id,
+                                   'network',
+                                   config.GET_NETWORK,
+                                   config.NET_POLL,
+                                   packet_size=4096,
+                                   ip = self.body_ip,
+                                   port = self.body_port)
         ]
 
         if kwargs.get('procs',True):
@@ -141,7 +169,7 @@ class Agent:
         # display
         ######################################################################
         #a window to draw stuff about this agent
-        if kwargs.get('win',True):
+        if config.SIMULATION:
             self.win = g.GraphWin('Agent:'+str(self.id),
                                   config.CONTROL_WIN_SIZE,
                                   config.CONTROL_WIN_SIZE,
@@ -172,6 +200,15 @@ class Agent:
         self.last_missing_broadcast_time = 0
         self.last_mment_broadcast_time = 0
 
+        #if using physical body, also need a tcp client to talk to it
+        #everything except ip:port is irrelevant, body should not talk to
+        #the agent directly, ever. This is purely for sending commands.
+        if not config.SIMULATION:
+            self.tcp = tcp.tcpJsonNmeaClient(self.body_ip,
+                                             self.body_port,
+                                             sensor_type = 'agent',
+                                             sensor_addr = self.addr)
+
 
 
 
@@ -179,44 +216,58 @@ class Agent:
         """
         draws a representation of the agents own state
         """
-        try:
-            i = 0
-            max_i = len(self.measurements)
-            nones = [0]
-            while i<max_i and len(nones)>0:
-                i+=1
-                x,y,d = self.measurements[-i]
-                nones = filter(lambda v: v is None, [x,y,d])
+        if not config.SIMULATION:
+            return
+        i = 0
+        max_i = len(self.measurements)
+        nones = [0]
 
-            vx,vy = self.V
-            # draw the gps values on the display
-            x *= config.CONTROL_PPM
-            y *= config.CONTROL_PPM
-            vx *= 40.
-            vy *= 40.
-            l = g.Line(g.Point(x,y),g.Point(x+vx,y+vy))
-            l.setArrow('last')
-            l.draw(self.win)
+        x,y,d = (None,None,None)
+        while i<max_i and len(nones)>0:
+            i+=1
+            x,y,d = self.measurements[-i]
+            nones = filter(lambda v: v is None, [x,y,d])
 
-            #draw the sonar values
-            d += 10
-            cir = g.Circle(g.Point(x,y), 2*config.CONTROL_PPM)
-            color = g.color_rgb(255-(d*4),150, d*4)
-            cir.setFill(color)
-            cir.setOutline('red')
-            cir.draw(self.win)
 
-            if self.target is not None:
-                self.target_g = g.Circle(g.Point(self.target[0]*config.CONTROL_PPM,
-                                                  self.target[1]*config.CONTROL_PPM),
-                                         1*config.CONTROL_PPM)
-                self.target_g.setFill('red')
-                self.target_g.setOutline('white')
-                self.target_g.draw(self.win)
-        except:
-            pass
+        vx,vy = self.V
+
+        if x is None or y is None or d is None:
+            return
+        # draw the gps values on the display
+        x *= config.CONTROL_PPM
+        y *= config.CONTROL_PPM
+        vx *= config.CONTROL_PPM
+        vy *= config.CONTROL_PPM
+        l = g.Line(g.Point(x,y),g.Point(x+vx,y+vy))
+        l.setArrow('last')
+        l.draw(self.win)
+
+#        vx *= 10
+#        vy *= 10
+
+#        print('####',x,y,vx,vy)
+
+        #draw the sonar values
+        d += 10
+        cir = g.Circle(g.Point(x,y), 2*config.CONTROL_PPM)
+        color = g.color_rgb(255-(d*4),150, d*4)
+        cir.setFill(color)
+        cir.setOutline('red')
+        cir.draw(self.win)
+
+        if self.target is not None:
+            self.target_g = g.Circle(g.Point(self.target[0]*config.CONTROL_PPM,
+                                              self.target[1]*config.CONTROL_PPM),
+                                     1*config.CONTROL_PPM)
+            self.target_g.setFill('red')
+            self.target_g.setOutline('white')
+            self.target_g.draw(self.win)
+#        except:
+#            pass
 
     def draw_others(self):
+        if not config.SIMULATION:
+            return
         for other_id, data in self.other_agents.iteritems():
             mments = data['mments']
             target = data['target']
@@ -228,8 +279,8 @@ class Agent:
             # draw the gps values on the display
             x *= config.CONTROL_PPM
             y *= config.CONTROL_PPM
-            vx *= 40.
-            vy *= 40.
+            vx *= config.CONTROL_PPM
+            vy *= config.CONTROL_PPM
             if vx>=0 and vy>=0:
                 l = g.Line(g.Point(x,y),g.Point(x+vx,y+vy))
                 l.setFill('gray')
@@ -833,6 +884,54 @@ class Agent:
         print('[I] Bcasted filling values for: '+missing_from+':'+str(len(fill)))
 
 
+    def check_collision(self):
+        #this bots velocity object
+        sX = np.array(self.get_latest_gps())
+        sV = np.array(self.V)
+        sR = config.VO_SELF_R
+        for other_id, other_agent in self.other_agents.iteritems():
+            #simply getting the last known is enough. If the other agent is
+            #too far away that we cant get the real-time gps of it, then the
+            #velocity obstacle that will create is guaranteed to be a
+            #non-issue. Only if we are close to it == can get real-time data
+            #from it, will the VO be useful.
+            mments = other_agent['mments']
+            last_mment_key = max(mments.keys())
+            last_mment = mments[last_mment_key]
+            x,y = last_mment[:2]
+            vx,vy = last_mment[2:4]
+            #last known pos of other agent
+            oX = np.array((x,y))
+            #relative pos of other agent
+            orX = oX - sX
+            oV = np.array((vx,vy))
+            oR = config.VO_OTHER_R
+
+            #distance between center points
+            d = gm.euclid_distance(sX,oX)
+            #angle of line that connects the centers
+            centerline_angle = np.arcsin(orX[1]/d)
+            #angle between centerline and line that connects self pos to
+            #outer edge of other's disk+self disk so that we can treat
+            #self as a point
+            angle_diff = np.arcsin((oR+sR) / d)
+            #absolute angles of the lines that connect self point to
+            #outer edge of other disk on both sides
+            disk_angle1 = centerline_angle - angle_diff
+            disk_angle2 = centerline_angle + angle_diff
+            #now we have a point and angles, we now have vectors for the
+            #collision cones' two defining edges
+
+
+
+
+
+
+    def wait_for_collision(self):
+        #TODO stop if this agent is about to collide with another
+        #decide stopping by target values
+        #if no targets known, larger int(id) will move.
+        pass
 
 
 
@@ -957,6 +1056,7 @@ class Agent:
                                         other_agent['mments'][bcast_m_id] = bcast_mment
                                         other_agent['target'] = tgt
 
+
                     if sensor_type == 'gps':
                         #velocity and heading from gps
                         self.V = sensor_value[2:]
@@ -1006,67 +1106,68 @@ class Agent:
         ######################################################################
         # key controls
         ######################################################################
-        key = self.win.checkKey()
-        #end control
-        if key=='Escape':
-            return True
-        #switch between remote and autonomous controls
-        if key == 'a':
-            self.mode = 'auto'
-        if key == 'r':
-            self.mode = 'remote'
-        if key == 't':
-            #save the traces
-            self.save_trace()
-        if key == 'g':
-            #draw the GP regressed surface
-            try:
-                self.gp.show_surface(self.measurements)
-            except:
-                print('[E] no surface to show yet')
-        if key == 'b':
-            for other_agent in self.other_agents.values():
-                mments = other_agent['mments']
-                for mment in mments.values():
-                    x,y = mment[0],mment[1]
-                    x*=config.CONTROL_PPM
-                    y*=config.CONTROL_PPM
-                    c = g.Point(x,y)
-                    c.setFill('red')
-                    c.setOutline('red')
-                    c.draw(self.win)
+        if config.SIMULATION:
+            key = self.win.checkKey()
+            #end control
+            if key=='Escape':
+                return True
+            #switch between remote and autonomous controls
+            if key == 'a':
+                self.mode = 'auto'
+            if key == 'r':
+                self.mode = 'remote'
+            if key == 't':
+                #save the traces
+                self.save_trace()
+            if key == 'g':
+                #draw the GP regressed surface
+                try:
+                    self.gp.show_surface(self.measurements)
+                except:
+                    print('[E] no surface to show yet')
+            if key == 'b':
+                for other_agent in self.other_agents.values():
+                    mments = other_agent['mments']
+                    for mment in mments.values():
+                        x,y = mment[0],mment[1]
+                        x*=config.CONTROL_PPM
+                        y*=config.CONTROL_PPM
+                        c = g.Point(x,y)
+                        c.setFill('red')
+                        c.setOutline('red')
+                        c.draw(self.win)
 
-        #mouse controls
-        mouse = self.win.checkMouse()
-        if mouse is not None:
-                x = mouse.getX()/config.CONTROL_PPM
-                y = mouse.getY()/config.CONTROL_PPM
-                print('mouse_meters;',u.float_format2(x),u.float_format2(y))
+            #mouse controls
+            mouse = self.win.checkMouse()
+            if mouse is not None:
+                    x = mouse.getX()/config.CONTROL_PPM
+                    y = mouse.getY()/config.CONTROL_PPM
+                    print('mouse_meters;',u.float_format2(x),u.float_format2(y))
 
-                #prevent interfering when in auto-mode
-                if self.mode == 'remote':
-                    self.target = (x,y)
-                    self.send_to_body('set_target'+','+str(x)+','+str(y))
+                    #prevent interfering when in auto-mode
+                    if self.mode == 'remote':
+                        self.target = (x,y)
+                        self.send_to_body('set_target'+','+str(x)+','+str(y))
 
-        #send new commands to simulation/hardware
-        #remote control
-        if self.mode == 'remote':
-            #the sent strings should have same-named methods with no arguments
-            #in body. def inc_speed(self): .....
-            if key=='Up':
-                self.send_to_body('inc_speed')
-            if key=='Down':
-                self.send_to_body('dec_speed')
-            if key=='s':
-                self.send_to_body('set_stop')
-            if key=='w':
-                self.send_to_body('set_max_speed')
-            if key=='Left':
-                self.send_to_body('turn_left')
-            if key=='Right':
-                self.send_to_body('turn_right')
-            if key=='x':
-                self.send_to_body('reset_turn')
+            #send new commands to simulation/hardware
+            #remote control
+            if self.mode == 'remote':
+                #the sent strings should have same-named methods with no arguments
+                #in body. def inc_speed(self): .....
+                if key=='Up':
+                    self.send_to_body('inc_speed')
+                if key=='Down':
+                    self.send_to_body('dec_speed')
+                if key=='s':
+                    self.send_to_body('set_stop')
+                if key=='w':
+                    self.send_to_body('set_max_speed')
+                if key=='Left':
+                    self.send_to_body('turn_left')
+                if key=='Right':
+                    self.send_to_body('turn_right')
+                if key=='x':
+                    self.send_to_body('reset_turn')
 
 
 ###############################################################################
@@ -1102,12 +1203,14 @@ class Agent:
 #                    print('[I] Moving forward a little to get some measurements')
                     self.send_to_body('set_max_speed')
 
-        g.update(config.UPDATE_FPS)
+        if config.SIMULATION:
+            g.update(config.UPDATE_FPS)
+
         return False
 
     def set_body_target(self, target):
         x,y = target
-        self.send_to_body('set_target'+','+str(x)+','+str(y))
+        self.send_to_body('set_target,'+str(x)+','+str(y))
         print('[T] set target to'+ str(self.target))
 
 
@@ -1116,11 +1219,31 @@ class Agent:
         convenience method to send requests to the body
         should be used to control the body of the agent
         """
-        self.producer.send(u.msg(self.id+'-body',msg))
+        if config.SIMULATION:
+            self.producer.send(u.msg(self.id+'-body',msg))
+        else:
+            if msg == 'set_max_speed':
+                #dont do this. if this is not a simulation the operator
+                #is expected to use remote control to gather the initial
+                #measurements manually.
+                pass
+
+            #the physical body has no 'stop' function, so... set target
+            #to current position instead and execute that.
+            if msg == 'set_stop':
+                msg = '$MSSTO,*00\r\n'
+                self.tcp.send(msg,data_type = 'command')
+
+
+            if msg.find('set_target') != -1 or msg.find('set_stop') != -1:
+                self.tcp.send(msg,data_type = 'command')
 
     def broadcast(self, msg):
         """
         sends a message for anyone in range to listen to
+
+        has nothing to do with the body of the agent so running in sim or
+        physical body is the same. No need for tcp comms with the body here.
         """
         self.producer.send(u.msg('broadcast', msg))
 
@@ -1129,14 +1252,18 @@ class Agent:
         """
         save the gps and sonar measurements to a file for reasons
         """
-        filename=config.TRACE_DIR+self.id+'_trace_'+config.SUFFIX
-        with open(filename,'w') as f:
-            for x,y,d in self.measurements:
-                f.write(str(x)+','+str(y)+','+str(d)+'\n')
+        filename=config.TRACE_DIR+\
+                        '_'+\
+                        self.id+\
+                        '_trace_'+\
+                        config.SUFFIX
+
+        a = np.array(self.measurements)
+        np.savetxt(filename,a)
         print('[I] trace saved to; '+filename)
-#        self.save_other_traces()
 
     def save_other_traces(self):
+        #TODO fix dis
         """
         save the measurements from others
         """
@@ -1155,9 +1282,13 @@ class Agent:
 if __name__=='__main__':
     try:
         id = sys.argv[1]
+        ip = sys.argv[2]
+        port = sys.argv[3]
     except:
         id = '0'
-    agent = Agent(id)
+        ip = '10.13.20.23'
+        port = '12'
+    agent = Agent(id,body_ip = ip,body_port = port)
     try:
         done = False
         print('[I] Running')
@@ -1174,3 +1305,10 @@ if __name__=='__main__':
         agent.win.close()
         for proc in agent.sensor_processes:
             proc.kill()
+
+    print('[I] Stopped')
+    agent.win.close()
+    for proc in agent.sensor_processes:
+        proc.kill()
+
+

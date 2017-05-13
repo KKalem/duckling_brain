@@ -28,8 +28,8 @@ class PureSensor:
                  request_sentence,
                  poll_rate,
                  packet_size=1024,
-                 ip = '0.0.0.0',
-                 port = 0):
+                 ip = None,
+                 port = None):
         #the sensor will receive readings from the body
         self.body_addr = id+'-body'
         #and send the readings when they arrive to the agent
@@ -57,8 +57,10 @@ class PureSensor:
         self.c = udp.consumer(blocking=0)
 
         if not config.SIMULATION:
-            self.tcp = tcp.tcpJsonNmeaClient(ip, port,
-                                             self.sensor_type, self.addr)
+            self.tcp = tcp.tcpJsonNmeaClient(ip,
+                                             int(port),
+                                             self.sensor_type,
+                                             self.addr)
 
     def run(self):
         """
@@ -78,12 +80,14 @@ class PureSensor:
                 if config.SIMULATION:
                     self.p.send(u.msg(self.body_addr,self.request_sentence))
                 else:
-                    self.tcp.send(self.request_sentence)
+                    #dont do nothin, the body is emitting on a regular basis
+                    pass
+#                    self.tcp.send(self.request_sentence)
                 self.last_poll = time.time()
                 self.first_poll = False
             else:
                 #can't poll yet, sleep a little
-                time.sleep(0.05)
+                time.sleep(0.005)
 
             #check if we got any responses
             response = None
@@ -114,7 +118,13 @@ class PureSensor:
                 self.p.send(u.msg(self.agent_addr, to_agent))
 
 
-def make_spawn_command(id, sensor_type, request_sentence, poll_rate, packet_size=1024):
+def make_spawn_command(id,
+                       sensor_type,
+                       request_sentence,
+                       poll_rate,
+                       packet_size=1024,
+                       ip='0.0.0.0',
+                       port=12):
     """
     convenince function to generate the command string for pexpect to run
     """
@@ -124,7 +134,9 @@ def make_spawn_command(id, sensor_type, request_sentence, poll_rate, packet_size
             str(sensor_type),
             str(request_sentence),
             str(poll_rate),
-            str(packet_size)]
+            str(packet_size),
+            str(ip),
+            str(port)]
 
 if __name__=='__main__':
     try:
@@ -133,6 +145,8 @@ if __name__=='__main__':
         sentence = sys.argv[3]
         poll_rate = float(sys.argv[4])
         packet_size=int(sys.argv[5])
+        ip = sys.argv[6]
+        port = int(sys.argv[7])
     except:
         #just for debugging
         id = '0'

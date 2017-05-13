@@ -6,7 +6,6 @@ Created on Sun Feb 21 11:44:13 2016
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
 
 #def arc_length(distance_to_target, angle_to_target):
 #    """
@@ -60,9 +59,6 @@ def vec_angle(v1,v2):
 def perp_vec(V):
     P = np.dot(V,np.array([[0,-1],[1,0]]))
     return P
-
-def plot_line(wall,**kwargs):
-    plt.plot([wall[0][0],wall[1][0]],[wall[0][1],wall[1][1]],**kwargs)
 
 
 def euclid_distance(pos1,pos2):
