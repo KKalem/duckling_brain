@@ -87,6 +87,7 @@ else:
     #convert to radians
     POLY = map(lambda p: [p[0]*np.pi/180., p[1]*np.pi/180.], POLY)
 
+    #TODO sometihng is flipped here.
     #convert to meters
     lat_to_y = lambda lat: r*lat
     lon_to_x = lambda lon: r*lon*cosphiz
@@ -108,7 +109,7 @@ else:
 ###############################################################################
 import time
 #suffix added to agent-generated stuff
-SUFFIX = 'physical'+'__'+str(time.time())
+SUFFIX = 'physical'#+'__'+str(time.time())
 #colormap to color the depthmap
 COLORMAP_FILE = 'colormap.matrix'
 #visual of the depthmap
@@ -122,7 +123,7 @@ TRACE_DIR = 'traces/'
 #how many mobile agents will be simulated
 NUMBER_OF_AGENTS = 2
 #starting positions of agents in meters.
-INIT_POS = [[0.,0.],[0.,0.]]
+INIT_POS = [[-1.,0.],[1.,0.]]
 #starting headings of agents in degrees. ccw positive from x axis
 INIT_HEADING = [180.,0.]
 #max forward speed and angular speeds
@@ -192,8 +193,8 @@ else:
 ###############################################################################
 #min. amount of std.dev. to consider a point 'unexplored'
 # 0.13 usually corresponds to about a 1-1.5m radius
-#MIN_STD = 0.13
-MIN_STD = 0.35
+MIN_STD = 0.13
+#MIN_STD = 0.35
 #discount points that will take longer to reach? this is the divider in utility func.
 CARE_ABOUT_TTR = False
 #should the agent avoid land?

@@ -15,24 +15,16 @@ import matplotlib.pyplot as plt
 import config
 import util as u
 
-suffix = '_May5_'+config.SUFFIX
+suffix = '_May15_FIXED'+config.SUFFIX
 # load the regressed map and the true map
 truth = np.load(config.TRACE_DIR+'/depthmap.npy')
-means = np.load(config.TRACE_DIR+'/means'+suffix+'.npy')
-stds = np.load(config.TRACE_DIR+'/stds'+suffix+'.npy')
+means = np.load(config.TRACE_DIR+'/means_May15_FIXEDphysical.npy')
+stds = np.load(config.TRACE_DIR+'/stds_May15_FIXEDphysical.npy')
 
 # load the measurement trace for min/max values
-m0 = u.load_trace('0')
-#m1 = u.load_trace('1')
-#m = m0+m1
-m = np.array(m0)
-
-s = int(config.SAFETY_RECT*config.PPM)
-
-#slice the matrices into the area that the boat was allowed to operate in
-truth = truth[s:-s,s:-s]
-means = means[s:-s,s:-s]
-stds = stds[s:-s,s:-s]
+m0 = np.loadtxt('traces/_0_trace_physical')
+m1 = np.loadtxt('traces/_1_trace_physical')
+m = np.vstack([m0,m1])
 
 
 #scale the normalized means
@@ -69,7 +61,8 @@ for i in range(5):
     else:
         plt.imshow(mats[i], cmap = cmaps[i])
     plt.colorbar()
-    plt.plot(m[:,0],m[:,1], color='magenta')
+    plt.plot(m[:len(m0),0],m[:len(m0),1], color='magenta')
+    plt.plot(m[len(m0):,0],m[len(m0):,1], color='magenta')
     plt.title(titles[i])
     plt.hold(False)
     plt.show()

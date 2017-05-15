@@ -347,7 +347,7 @@ class Agent:
 
         return times
 
-    def get_enough_measurements(self, enough = 165., take_last = 20, skip_last = 5):
+    def get_enough_measurements(self, enough = 165., take_last = 20, skip_last = 3):
         """
         returns enough measurements for GP to get an 'ok' regression in
         limited time.
@@ -370,7 +370,7 @@ class Agent:
         for other_agent_map in self.other_agents.itervalues():
             mments = other_agent_map['mments']
             other_ids.append(mments.keys())
-            mments = map(lambda m: (m[0],m[1],m[2]), mments.values()) #x,y,d
+            mments = map(lambda m: (m[0],m[1],m[4]), mments.values()) #x,y,vx,vy,d
             other_mments.append(mments)
             total_points += len(mments)
 
@@ -555,7 +555,7 @@ class Agent:
         #fit the gp to current measurements, this fitted model will be used later
         #re-make the gp object. band-aid trial. THIS FKIN WORKS, FFS SCIKIT.
 #        self.gp = gp.GP()
-        self.gp.fit(self.get_enough_measurements())
+        self.gp.fit(self.get_enough_measurements(), ID=self.id, save_surface=True)
 
         #means and std devs. of candidate points given all measurements
         means, stds = self.gp.regress(candidates)
@@ -1085,7 +1085,7 @@ class Agent:
                                         d = None
                                     else:
                                         d = float(mment[2])
-                                    fill.append([id,[x,y,d]])
+                                    fill.append([id,[x,y,0,0,d]])
 
                                 #which agent does this data belong to?
                                 other_agent = self.other_agents.get(fill_to)

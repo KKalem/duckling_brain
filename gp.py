@@ -24,26 +24,21 @@ class GP:
     def __init__(self, **kwargs):
         """
         inits the gpr, no ftting done here
+        noise needs to be tuned EXTREMELY CAREFULLY
+        if too large, EVERYTHING will be explained by this noise
+        and this will cause std dev to be large everywhere
+        if too little or none, extremely close samples with different values
+        can cause the optimizer to fail miserably, leading to useless models
         """
-        kernel = kernels.ConstantKernel(1)
-        kernel += kernels.Matern(length_scale = 1, nu = 2.5)
-#        kernel += kernels.Matern(length_scale = 5, nu = 2.5)
-#        kernel += kernels.Matern(length_scale = 10, nu = 2.5)
-#        kernel += kernels.Matern(length_scale = 15, nu = 2.5)
-#        kernel += kernels.Matern(length_scale = 20, nu = 2.5)
-#        kernel += kernels.Matern(length_scale = 25, nu = 2.5)
-        #noise needs to be tuned EXTREMELY CAREFULLY
-        #if too large, EVERYTHING will be explained by this noise
-        #and this will cause std dev to be large everywhere
-        #if too little or none, extremely close samples with different values
-        #can cause the optimizer to fail miserably, leading to useless models
-#        kernel *= kernels.Matern(length_scale = 1, nu = 2.5)
-#        kernel += kernels.RBF(length_scale=5)
+        kernel = kernels.ConstantKernel(0.5)
+#        kernel += kernels.Matern(length_scale = 0.5, nu = 2.5)
+
+        kernel += kernels.RBF(length_scale=5)
         kernel += kernels.WhiteKernel(noise_level = 0.0001)
         self.gpr = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=15)
         #TODO tune/play with everything above
 
-    def fit(self, measurements):
+    def fit(self, measurements, **kwargs):
         """
         only does fitting
         """
@@ -60,6 +55,15 @@ class GP:
         start = time.time()
         self.gpr.fit(X,Y)
         print('[GP] fitting time; '+str(time.time()-start))
+
+
+        if kwargs.get('save_surface',False):
+            plt.ioff()
+            fig, means, stds = self.show_surface(measurements,
+                                                 show=False,
+                                                 save=True,
+                                                 ID=kwargs.get('ID'),
+                                                 grid_density=40)
 
     def regress(self, targets):
         """
@@ -134,6 +138,20 @@ class GP:
         if kwargs.get('show',True):
             plt.show(block=False)
 
+        if kwargs.get('save',False):
+            ID = kwargs.get('ID',99)
+            name = ID+'_'+str(time.time())
+            plt.savefig('etc/surface_'+name+'.png')
+            plt.figure()
+            plt.matshow(stds_z)
+            plt.colorbar()
+            plt.savefig('etc/stds_'+name+'.png')
+            plt.figure()
+            plt.matshow(means_z)
+            plt.colorbar()
+            plt.savefig('etc/means_'+name+'.png')
+            print('saved surfaces')
+
         return fig, means_z, stds_z
 
 
@@ -202,20 +220,38 @@ class GP:
 
 if __name__=='__main__':
     k = -1
-    m = np.loadtxt('traces/_0_trace_physical__1494852435.4')
-    m2 = np.loadtxt('traces/_1_trace_physical__1494852437.32')
-    m = np.vstack([m,m2])
+    m0 = np.loadtxt('traces/_0_trace_physical')
+    m1 = np.loadtxt('traces/_1_trace_physical')
+    m = np.vstack([m0,m1])
+#    m = m2
 #    more_noise = np.random.rand(m[:,2].shape[0])*40
 #    m[:,2] += more_noise
+
+#    import Agent
+#    a = Agent.Agent('1')
+#    a.measurements = list(m1)
+#
+#    mm = {}
+#    m0 = list(m0)
+#    for i in range(len(m0)):
+#        mm[i] = list(m0[i])
+#    a.other_agents = {'1':{'mments':mm}}
+#
+#    m = a.get_enough_measurements()
+
+
+
     gp = GP()
     skip = 1
     gp.fit(m[::skip])
-    fig, means, stds = gp.show_surface(m[::skip], show=False, grid_density=60)
+    fig, means, stds = gp.show_surface(m[::skip], show=True, grid_density=20)
 
-    plt.matshow(stds)
+
+    plt.matshow(stds, origin='lower')
     plt.colorbar()
+    plt.show()
 
-#    gp.save_matrix(suffix='_May5_'+config.SUFFIX)
+    gp.save_matrix(suffix='_May15_FIXED'+config.SUFFIX)
 
 #animation
 #    plt.ioff()
