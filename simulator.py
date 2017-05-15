@@ -96,6 +96,13 @@ if __name__=='__main__':
         #make 0,0 center
         win.setCoords(-config.WINDOW_SIZE/2.,-config.WINDOW_SIZE/2.,
                       config.WINDOW_SIZE/2.,config.WINDOW_SIZE/2.)
+        #center the polygon
+#        xmax,ymax = np.max(config.POLY,axis=0)
+#        xmin,ymin = np.min(config.POLY,axis=0)
+#        win.setCoords(xmin*config.CONTROL_PPM,
+#                      ymin*config.CONTROL_PPM,
+#                      xmax*config.CONTROL_PPM,
+#                      ymax*config.CONTROL_PPM)
         very_light_blue = g.color_rgb(220,250,255)
         win.setBackground(very_light_blue)
 
@@ -135,6 +142,7 @@ if __name__=='__main__':
             body = DynamicBody(id = strid, depthmap = depthmap)
             body.state.x = config.INIT_POS[i][0]
             body.state.y = config.INIT_POS[i][1]
+            body.state.heading = config.INIT_HEADING[i]
             agent_bodies[strid] = body
 
             #shape of the body
@@ -185,11 +193,11 @@ if __name__=='__main__':
 ###############################################################################
 # START CONTROLS
 ###############################################################################
-        if config.START_CONTROLS:
-            print('[I] Starting control processes')
-            for body in agent_bodies:
-                proc = Popen(['python', 'Agent.py', str(body.id)])
-                agent_processes.append(proc)
+#        if config.START_CONTROLS:
+#            print('[I] Starting control processes')
+#            for body in agent_bodies:
+#                proc = Popen(['python', 'Agent.py', str(body.id)])
+#                agent_processes.append(proc)
 
 
 ###############################################################################

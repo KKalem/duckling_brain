@@ -15,7 +15,7 @@ import config
 
 import time
 
-if config.SIMULATION:
+if not config.HEADLESS:
     from matplotlib import pyplot as plt
     import matplotlib as mpl
     from mpl_toolkits.mplot3d import Axes3D #needed for '3d'
@@ -26,14 +26,20 @@ class GP:
         inits the gpr, no ftting done here
         """
         kernel = kernels.ConstantKernel(1)
-        kernel += kernels.Matern(length_scale = 10, nu = 2.5)
+        kernel += kernels.Matern(length_scale = 1, nu = 2.5)
+#        kernel += kernels.Matern(length_scale = 5, nu = 2.5)
+#        kernel += kernels.Matern(length_scale = 10, nu = 2.5)
+#        kernel += kernels.Matern(length_scale = 15, nu = 2.5)
+#        kernel += kernels.Matern(length_scale = 20, nu = 2.5)
+#        kernel += kernels.Matern(length_scale = 25, nu = 2.5)
         #noise needs to be tuned EXTREMELY CAREFULLY
         #if too large, EVERYTHING will be explained by this noise
         #and this will cause std dev to be large everywhere
         #if too little or none, extremely close samples with different values
         #can cause the optimizer to fail miserably, leading to useless models
-#        kernel += kernels.WhiteKernel(noise_level = 1)
-        kernel += kernels.RBF(length_scale=1)
+#        kernel *= kernels.Matern(length_scale = 1, nu = 2.5)
+#        kernel += kernels.RBF(length_scale=5)
+        kernel += kernels.WhiteKernel(noise_level = 0.0001)
         self.gpr = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=15)
         #TODO tune/play with everything above
 
@@ -195,20 +201,19 @@ class GP:
         print('[GP] Done')
 
 if __name__=='__main__':
-    import util
     k = -1
-    m0 = util.load_trace('0')[:k]
-#    m1 = util.load_trace('1')[:k]
-#    m0.extend(m1)
-#    m0.extend([m0[-1],m0[-1],m0[-1],m0[-1],m0[-1]])
-#    m0.extend([[0,0,0], [0,5,10],[5,0,-10]])
-    m = np.array(m0)
+    m = np.loadtxt('traces/_0_trace_physical__1494852435.4')
+    m2 = np.loadtxt('traces/_1_trace_physical__1494852437.32')
+    m = np.vstack([m,m2])
 #    more_noise = np.random.rand(m[:,2].shape[0])*40
 #    m[:,2] += more_noise
     gp = GP()
-    skip = 2
+    skip = 1
     gp.fit(m[::skip])
     fig, means, stds = gp.show_surface(m[::skip], show=False, grid_density=60)
+
+    plt.matshow(stds)
+    plt.colorbar()
 
 #    gp.save_matrix(suffix='_May5_'+config.SUFFIX)
 

@@ -54,7 +54,7 @@ def rand_range(rng):
 
 def float_format2(value):
     try:
-        return  "{0:.2f}".format(value)
+        return  "{0:.7f}".format(value)
     except:
         return '-'
 

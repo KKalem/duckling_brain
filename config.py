@@ -6,12 +6,102 @@ Created on Sat Mar  4 16:15:43 2017
 
 Bunch of global values for other stuff to read from.
 """
+import numpy as np
+
 #is the agent wokring in sim or on physical?
 #changes the communication stuffs mostly
 #from udp multicasts to tcp connections
 #if true, runs in sim.
 SIMULATION = True
+#wether the agent has a screen or not.
+HEADLESS = False
+#use the tahirvoic method?
 USE_TAHIROVIC = True
+
+#bounding poly agents will stay in. ccw direction
+if SIMULATION:
+    import geometry as gm
+    #everything is in meters
+    WINDOW_METERS = 100.
+    #square side = 2a, centered at 0,0
+    a = WINDOW_METERS/2.
+    #safety distance to shrink
+    s = 1
+    POLY = [[ a-s, a-s],
+            [-a+s, a-s],
+            [-a+s,-a+s],
+            [ a-s,-a+s]]
+
+#    POLY = [[-3.6811352, 41.3639399],
+#            [-45.5642738, -3.8447412],
+#            [-23.3138564, -43.9282137],
+#            [22.3639399, -28.3856427],
+#            [34.4390651, 36.7295492]]
+#
+#    POLY = [[39., 40.],
+#            [11., 33.],
+#            [10., 4.],
+#            [40., 19.]]
+
+    xmin,ymin = list(np.min(POLY,axis=0))
+    xmax,ymax = list(np.max(POLY,axis=0))
+
+    xmid = (xmin+xmax) /2.
+    ymid = (ymin+ymax) /2.
+
+    #center the polygon to have its middle be [0,0]
+    POLY = map(lambda p: [p[0]-xmid, p[1]-ymid], POLY)
+
+    #shifting the center does not affect lengths
+    xsize = gm.euclid_distance([xmax,ymid],[xmin,ymid])
+    ysize = gm.euclid_distance([xmid,ymax],[xmid,ymin])
+
+    WINDOW_METERS = max(xsize,ysize)
+
+else:
+    from geopy.distance import vincenty
+    #in GPS minutes, will be converted to meters
+    POLY = [[59.360307, 18.052161],
+            [59.358581, 18.052697],
+            [59.359098, 18.054961],
+            [59.360558, 18.054811]]
+
+    #convert to degrees from minutes (60 mins = 1deg)
+#    POLY = map(lambda p: [p[0]/60., p[1]/60.], POLY)
+
+    xmin,ymin = list(np.min(POLY,axis=0))
+    xmax,ymax = list(np.max(POLY,axis=0))
+
+    xmid = (xmin+xmax) /2.
+    ymid = (ymin+ymax) /2.
+
+    xsize = vincenty([xmax,ymid],[xmin,ymid]).meters
+    ysize = vincenty([xmid,ymax],[xmid,ymin]).meters
+
+    WINDOW_METERS = max(xsize,ysize)
+
+    #radius of earth in meters
+    r = 6371000
+    cosphiz = np.cos(np.pi*xmid/180.)
+
+    #convert to radians
+    POLY = map(lambda p: [p[0]*np.pi/180., p[1]*np.pi/180.], POLY)
+
+    #convert to meters
+    lat_to_y = lambda lat: r*lat
+    lon_to_x = lambda lon: r*lon*cosphiz
+
+    POLY = map(lambda p: [lon_to_x(p[1]), lat_to_y(p[0])], POLY)
+
+    #center the polygon to have its middle be [0,0]
+    xmin,ymin = list(np.min(POLY,axis=0))
+    xmax,ymax = list(np.max(POLY,axis=0))
+    xmid = (xmin+xmax) /2.
+    ymid = (ymin+ymax) /2.
+    POLY = map(lambda p: [p[0]-xmid, p[1]-ymid], POLY)
+
+    LATLON_TO_XY = lambda latlon: [lon_to_x(latlon[1])-xmid, lat_to_y(latlon[0])-ymid]
+
 
 ###############################################################################
 # FILES
@@ -32,9 +122,9 @@ TRACE_DIR = 'traces/'
 #how many mobile agents will be simulated
 NUMBER_OF_AGENTS = 2
 #starting positions of agents in meters.
-INIT_POS = [[0,0],[0,5]]
+INIT_POS = [[0.,0.],[0.,0.]]
 #starting headings of agents in degrees. ccw positive from x axis
-INIT_HEADING = [0.,0.]
+INIT_HEADING = [180.,0.]
 #max forward speed and angular speeds
 AGENT_MAX_V = 5 #m/s 1.5 normal
 AGENT_MAX_W = 40. #degrees 15 normal
@@ -42,14 +132,11 @@ AGENT_MAX_W = 40. #degrees 15 normal
 UPDATE_FPS = 60.
 #simulation area size. Middle point is 0,0, this value is the length of one side
 #of the square area
-WINDOW_METERS = 100. #1k final
+WINDOW_METERS = WINDOW_METERS #1k final
 #should the agent ignore broadcasts that are far away?
 SIMULATE_NETWORK_BREAKAGE = False
 #range to start ignoring messages in meters
 NETWORK_RANGE = 10
-#for simple rectangle polygon bounds for the agents to stay inside
-#in meters
-SAFETY_RECT = 1
 
 
 ###############################################################################
@@ -103,19 +190,27 @@ else:
 ###############################################################################
 # AGENT BEHAVIOUR
 ###############################################################################
+#min. amount of std.dev. to consider a point 'unexplored'
+# 0.13 usually corresponds to about a 1-1.5m radius
+#MIN_STD = 0.13
+MIN_STD = 0.35
 #discount points that will take longer to reach? this is the divider in utility func.
 CARE_ABOUT_TTR = False
+#should the agent avoid land?
+AVOID_LAND = False
+
 #velocity obstacle agent disc radius assumptions. Keep in mind that there is a delay
 #in communications, so the 'other' radius should probably be larger than self radius
 #in meters.
 VO_SELF_R = 2.
 VO_OTHER_R = 5.
 
+#limit of depth to explore. Shallower (d<limit) points are considered unreachable
+#or land. in meters.
+DEPTH_LIMIT = 2.
 
 #number of measurements expected to start using gp
 MEASUREMENT_COUNT_THRESHOLD = 5
-#min. amount of std.dev. to consider a point 'unexplored'
-MIN_STD = 0.13
 #min number of points to expect to consider choosing one
 MIN_UNEXPLORED = 1
 #default values of smallest search donut. in meters
@@ -172,21 +267,22 @@ if SIMULATION:
     PAINT_EXPLORED = False
     PAINT_UNEXPLORED = False
     PAINT_TAHIROVIC = True
+    PAINT_LAND = True
 else:
     PAINT_EXPLORED = False
     PAINT_UNEXPLORED = False
     PAINT_TAHIROVIC = False
+    PAINT_LAND = True
 #draw the tahirovic centroid on the canvas?
 T_DRAW_CENTROID = True
-
-
-###############################################################################
-# DERIVED VALUES
-###############################################################################
 #display size in inches of screen
 WINDOW_INCHES = 5.
 #window dpi
 WINDOW_DPI = WINDOW_SIZE/WINDOW_INCHES
+
+###############################################################################
+# DERIVED VALUES
+###############################################################################
 #size of the depthmap in pixels
 DEPTHMAP_SIZE = WINDOW_SIZE
 #pixels per meter of the control window

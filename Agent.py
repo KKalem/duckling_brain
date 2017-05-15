@@ -22,7 +22,7 @@ import numpy as np
 #import matplotlib.pyplot as plt
 from subprocess import Popen
 
-if config.SIMULATION:
+if not config.HEADLESS:
     import graphics as g
 
 class Agent:
@@ -82,16 +82,8 @@ class Agent:
 
 
         #the bounding polygon for this agent to stay inside
-        #use a simple rectangle if none given
-        #square side = 2a, centered at 0,0
-        a = config.WINDOW_METERS/2.
-        #safety distance to shrink
-        s = config.SAFETY_RECT
-        rect = [[ a-s, a-s],
-                [-a+s, a-s],
-                [-a+s,-a+s],
-                [ a-s,-a+s]]
-        self.bounds = kwargs.get('bounds',rect)
+        #ccw point-list
+        self.bounds = kwargs.get('bounds',config.POLY)
 
         #generate a lattice of points inside the given polygon for later use
         #the matrix should encompass the entire given polygonal area
@@ -169,17 +161,23 @@ class Agent:
         # display
         ######################################################################
         #a window to draw stuff about this agent
-        if config.SIMULATION:
+        if not config.HEADLESS:
             self.win = g.GraphWin('Agent:'+str(self.id),
                                   config.CONTROL_WIN_SIZE,
                                   config.CONTROL_WIN_SIZE,
                                   autoflush=False)
+
+
+#            self.win.setCoords(xmin*config.CONTROL_PPM,
+#                               ymin*config.CONTROL_PPM,
+#                               xmax*config.CONTROL_PPM,
+#                               ymax*config.CONTROL_PPM)
             self.win.setCoords(-config.CONTROL_WIN_SIZE/2., -config.CONTROL_WIN_SIZE/2.,
                           config.CONTROL_WIN_SIZE/2., config.CONTROL_WIN_SIZE/2.)
             self.win.setBackground(g.color_rgb(220,250,255))
 
             #some debug text to display on the control window
-            self.debugtext = g.Text(g.Point(-config.CONTROL_WIN_SIZE/2.+70,0),'No-text')
+#            self.debugtext = g.Text(g.Point(-config.CONTROL_WIN_SIZE/2.+70,0),'No-text')
 #            self.debugtext.draw(self.win)
 
             #draw the bounding polygon
@@ -216,7 +214,7 @@ class Agent:
         """
         draws a representation of the agents own state
         """
-        if not config.SIMULATION:
+        if config.HEADLESS:
             return
         i = 0
         max_i = len(self.measurements)
@@ -266,7 +264,7 @@ class Agent:
 #            pass
 
     def draw_others(self):
-        if not config.SIMULATION:
+        if config.HEADLESS:
             return
         for other_id, data in self.other_agents.iteritems():
             mments = data['mments']
@@ -459,6 +457,76 @@ class Agent:
             ret.extend(other_tail)
         return ret
 
+    def scale_means(self, means):
+        """
+        scales the given means[0..1] into currently known range of real depth values
+        """
+        #make a list of all known depth values. THis will be used to scale
+        #the [0..1] means to depths
+        all_depths = []
+        #depths gathered by this agent
+        self_depths = map(lambda m: m[2], self.measurements)
+        self_depths = filter(lambda m: m is not None, self_depths)
+        all_depths.extend(self_depths)
+        #depths gathered by other agents
+        for other_agent in self.other_agents.itervalues():
+            mments = other_agent['mments']
+            mments = map(lambda m: m[2], mments.values())
+            mments = filter(lambda m: m is not None, mments)
+            all_depths.extend(mments)
+
+        #scale the means to depths
+        scaled_means = u.scale_range(means, min(all_depths), max(all_depths))
+        return scaled_means
+
+
+    def filter_land(self, means, points, stds):
+        """
+        given all the measurements we know, and a fitted GP. Use the means
+        to estimate which of the given points lie over water and return
+        the ones that are NOT over surface
+        """
+        if not config.AVOID_LAND:
+            return means,points,stds
+
+        scaled_means = self.scale_means(means)
+
+        #filter the ones that are deep enough
+        filtered = filter(lambda p: p[0] > config.DEPTH_LIMIT, zip(scaled_means, points, stds))
+
+        if config.PAINT_LAND:
+            if filtered is not None and len(filtered) > 0:
+                _,waters,__ = zip(*filtered)
+                for water in waters:
+                    try:
+                        rect = g.Circle(g.Point(water[0]*config.CONTROL_PPM,
+                                                water[1]*config.CONTROL_PPM), 5)
+                        rect.setFill('blue')
+                        rect.setOutline('blue')
+                        rect.draw(self.win)
+                    except:
+                        print('problem water',water)
+
+            #land parts for painting
+            lands = filter(lambda p: p[0] <= config.DEPTH_LIMIT, zip(scaled_means, points, stds))
+            if lands is not None and len(lands) > 0:
+                _,lands,__ = zip(*lands)
+                for land in lands:
+                    try:
+                        rect = g.Circle(g.Point(land[0]*config.CONTROL_PPM,
+                                                land[1]*config.CONTROL_PPM), 5)
+                        rect.setFill('black')
+                        rect.setOutline('black')
+                        rect.draw(self.win)
+                    except:
+                        print('problem land',land)
+
+        #unzip the means from points, return points only
+        scaled_means,result,stds = zip(*filtered)
+
+        return scaled_means,result,stds
+
+
 
     def generate_targets(self):
         current_pos = self.get_latest_gps()
@@ -486,7 +554,7 @@ class Agent:
 
         #fit the gp to current measurements, this fitted model will be used later
         #re-make the gp object. band-aid trial. THIS FKIN WORKS, FFS SCIKIT.
-        self.gp = gp.GP()
+#        self.gp = gp.GP()
         self.gp.fit(self.get_enough_measurements())
 
         #means and std devs. of candidate points given all measurements
@@ -498,7 +566,12 @@ class Agent:
 
         if unexplored is not None and len(unexplored) > 0:
             #extract the points only from the triples of (candidate, mean, std)
-            unexplored = zip(*unexplored)[0]
+            unexplored, means, stds = zip(*unexplored)
+
+            if config.AVOID_LAND:
+                #filter out predicted lands
+                scaled_means, unexplored, stds = self.filter_land(means, unexplored, stds)
+
             targets.extend(unexplored)
 
             ##### paint the map with points
@@ -539,10 +612,19 @@ class Agent:
             #use the std of each point as a weight
             means, stds = self.gp.regress(self.inside_points)
             #filter the unexplored points
-            unexplored = filter(lambda c: c[1] > config.MIN_STD, zip(self.inside_points, stds))
-            unexplored = zip(*unexplored)
-            unexplored_pts = np.array(unexplored[0])
-            unexplored_stds = np.array(unexplored[1])
+            unexplored = filter(lambda c: c[1] > config.MIN_STD, zip(self.inside_points, stds, means))
+
+#            unexplored = zip(*unexplored)
+#            unexplored_pts = np.array(unexplored[0])
+#            unexplored_stds = np.array(unexplored[1])
+#            unexplored_means = np.array(unexplored[2])
+            unexplored_pts, unexplored_stds, unexplored_means = zip(*unexplored)
+
+            if config.AVOID_LAND:
+                #filter out land
+                scaled_means, unexplored_pts, unexplored_stds = self.filter_land(unexplored_means,
+                                                                                 unexplored_pts,
+                                                                                 unexplored_stds)
 
             if config.PAINT_TAHIROVIC:
                 #normalize means for painting
@@ -634,20 +716,30 @@ class Agent:
             if i == 0:
                 prev = 0
                 stds = all_stds[0:path_lens[i]]
+                means = all_means[0:path_lens[i]]
             else:
                 prev = path_lens[i-1]
                 stds = all_stds[prev + 1 : prev + path_lens[i]]
+                means = all_means[prev + 1 : prev + path_lens[i]]
+
+            if config.AVOID_LAND:
+                #dont consider a path that goes through a land
+                #TODO instead, pathfind around said land
+                scaled_means = self.scale_means(means)
+                contains_land = map(lambda sm: sm < config.DEPTH_LIMIT, scaled_means)
+                if any(contains_land):
+                    pass
 
             path_stds.append(sum(stds))
             target_stds.append(stds[-1]) #last one is the candidate always
         print('[I] took '+str(time.time()-start)+' seconds for path stds')
 
         #once the paths are filtered, find out the remaining targets
-        targets = []
-        for path in paths:
-            targets.append(path[-1])
+#        targets = []
+#        for path in paths:
+#            targets.append(path[-1])
+        targets = [pathh[-1] for pathh in paths]
 
-        #TODO filter out paths that go tru land too
 
         if config.CARE_ABOUT_TTR:
             #time to reach these candidate points
@@ -884,54 +976,54 @@ class Agent:
         print('[I] Bcasted filling values for: '+missing_from+':'+str(len(fill)))
 
 
-    def check_collision(self):
-        #this bots velocity object
-        sX = np.array(self.get_latest_gps())
-        sV = np.array(self.V)
-        sR = config.VO_SELF_R
-        for other_id, other_agent in self.other_agents.iteritems():
-            #simply getting the last known is enough. If the other agent is
-            #too far away that we cant get the real-time gps of it, then the
-            #velocity obstacle that will create is guaranteed to be a
-            #non-issue. Only if we are close to it == can get real-time data
-            #from it, will the VO be useful.
-            mments = other_agent['mments']
-            last_mment_key = max(mments.keys())
-            last_mment = mments[last_mment_key]
-            x,y = last_mment[:2]
-            vx,vy = last_mment[2:4]
-            #last known pos of other agent
-            oX = np.array((x,y))
-            #relative pos of other agent
-            orX = oX - sX
-            oV = np.array((vx,vy))
-            oR = config.VO_OTHER_R
-
-            #distance between center points
-            d = gm.euclid_distance(sX,oX)
-            #angle of line that connects the centers
-            centerline_angle = np.arcsin(orX[1]/d)
-            #angle between centerline and line that connects self pos to
-            #outer edge of other's disk+self disk so that we can treat
-            #self as a point
-            angle_diff = np.arcsin((oR+sR) / d)
-            #absolute angles of the lines that connect self point to
-            #outer edge of other disk on both sides
-            disk_angle1 = centerline_angle - angle_diff
-            disk_angle2 = centerline_angle + angle_diff
-            #now we have a point and angles, we now have vectors for the
-            #collision cones' two defining edges
-
-
-
-
-
-
-    def wait_for_collision(self):
-        #TODO stop if this agent is about to collide with another
-        #decide stopping by target values
-        #if no targets known, larger int(id) will move.
-        pass
+#    def check_collision(self):
+#        #this bots velocity object
+#        sX = np.array(self.get_latest_gps())
+#        sV = np.array(self.V)
+#        sR = config.VO_SELF_R
+#        for other_id, other_agent in self.other_agents.iteritems():
+#            #simply getting the last known is enough. If the other agent is
+#            #too far away that we cant get the real-time gps of it, then the
+#            #velocity obstacle that will create is guaranteed to be a
+#            #non-issue. Only if we are close to it == can get real-time data
+#            #from it, will the VO be useful.
+#            mments = other_agent['mments']
+#            last_mment_key = max(mments.keys())
+#            last_mment = mments[last_mment_key]
+#            x,y = last_mment[:2]
+#            vx,vy = last_mment[2:4]
+#            #last known pos of other agent
+#            oX = np.array((x,y))
+#            #relative pos of other agent
+#            orX = oX - sX
+#            oV = np.array((vx,vy))
+#            oR = config.VO_OTHER_R
+#
+#            #distance between center points
+#            d = gm.euclid_distance(sX,oX)
+#            #angle of line that connects the centers
+#            centerline_angle = np.arcsin(orX[1]/d)
+#            #angle between centerline and line that connects self pos to
+#            #outer edge of other's disk+self disk so that we can treat
+#            #self as a point
+#            angle_diff = np.arcsin((oR+sR) / d)
+#            #absolute angles of the lines that connect self point to
+#            #outer edge of other disk on both sides
+#            disk_angle1 = centerline_angle - angle_diff
+#            disk_angle2 = centerline_angle + angle_diff
+#            #now we have a point and angles, we now have vectors for the
+#            #collision cones' two defining edges
+#
+#
+#
+#
+#
+#
+#    def wait_for_collision(self):
+#        #TODO stop if this agent is about to collide with another
+#        #decide stopping by target values
+#        #if no targets known, larger int(id) will move.
+#        pass
 
 
 
@@ -1106,7 +1198,7 @@ class Agent:
         ######################################################################
         # key controls
         ######################################################################
-        if config.SIMULATION:
+        if not config.HEADLESS:
             key = self.win.checkKey()
             #end control
             if key=='Escape':
@@ -1203,7 +1295,7 @@ class Agent:
 #                    print('[I] Moving forward a little to get some measurements')
                     self.send_to_body('set_max_speed')
 
-        if config.SIMULATION:
+        if not config.HEADLESS:
             g.update(config.UPDATE_FPS)
 
         return False
@@ -1235,7 +1327,8 @@ class Agent:
                 self.tcp.send(msg,data_type = 'command')
 
 
-            if msg.find('set_target') != -1 or msg.find('set_stop') != -1:
+            if msg.find('set_target') != -1:
+                #set target has some stuff to parse into NMEA, tcp handles that
                 self.tcp.send(msg,data_type = 'command')
 
     def broadcast(self, msg):
@@ -1258,7 +1351,12 @@ class Agent:
                         '_trace_'+\
                         config.SUFFIX
 
-        a = np.array(self.measurements)
+        noneless = filter(lambda m: m[0] is not None and\
+                                    m[1] is not None and\
+                                    m[2] is not None,
+                            self.measurements)
+
+        a = np.array(noneless)
         np.savetxt(filename,a)
         print('[I] trace saved to; '+filename)
 
@@ -1300,15 +1398,18 @@ if __name__=='__main__':
         agent.win.close()
         for proc in agent.sensor_processes:
             proc.kill()
+        agent.save_trace()
     else:
         print('[I] Stopped')
         agent.win.close()
         for proc in agent.sensor_processes:
             proc.kill()
+        agent.save_trace()
 
     print('[I] Stopped')
     agent.win.close()
     for proc in agent.sensor_processes:
         proc.kill()
+    agent.save_trace()
 
 

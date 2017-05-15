@@ -141,14 +141,20 @@ class tcpJsonNmeaClient():
                 #make a packet for compliance
                 data = {'to':self.sensor_addr}
                 if nmea_type == '$MSGPS':
-                    #TODO convert speed direction to vx vy
+                    #heading is north=0, cw=+ from gps
+                    #agent expects east=0 ccw=+  convert to that
                     heading = 360-float(parts[4])+90
                     speed = float(parts[3])
 
                     vx,vy = speed*u.cos(heading), speed*u.sin(heading)
 
-                    data['data'] = [float(parts[2]), #lat
-                                    float(parts[1]), #lon
+                    #if not running in sim, the gps input is in lat,lon
+                    #instead of meters. convert that using the same
+                    #configs used to convert the polygon
+                    x,y = c.LATLON_TO_XY([parts[2],parts[1]])
+
+                    data['data'] = [x,
+                                    y,
                                     vx,
                                     vy]
 
