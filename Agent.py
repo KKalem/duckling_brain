@@ -19,11 +19,11 @@ import sys
 import traceback
 import time
 import numpy as np
-#import matplotlib.pyplot as plt
 from subprocess import Popen
 
 if not config.HEADLESS:
     import graphics as g
+    import matplotlib.pyplot as plt
 
 class Agent:
     """
@@ -36,8 +36,6 @@ class Agent:
         initialize the agent, id defines the body it will control
         creates a small info and control window
         """
-        self.counter = 0 #temp
-
         #id and address of the agent. Should have a corresponding body and sensors
         self.id = id
         self.addr = self.id+'-agent'
@@ -52,7 +50,16 @@ class Agent:
 
         #remote or auto
         #remote for getting keyboard input to control speed/turn
-        self.mode = 'remote'
+        self.mode = 'auto'
+
+        #number of samples to use when fitting GP.
+        #this is increased near the end when no 'unexlpored' points
+        #could be found. resets after finding a target
+        self.enough_points = kwargs.get('enough_points',config.DEFAULT_ENOUGH)
+
+        #velocity obstacle radii
+        self.vo_r = kwargs.get('vo_r',config.VO_SELF_R)
+        self.other_r = kwargs.get('other_r',config.VO_OTHER_R)
 
         #a map of agent_id -> properties for each of the other agents
         #this agent has encountered.
@@ -84,6 +91,10 @@ class Agent:
         #the bounding polygon for this agent to stay inside
         #ccw point-list
         self.bounds = kwargs.get('bounds',config.POLY)
+
+        if not config.SIMULATION:
+            #map the latlon coordiantes to local coordinates
+            self.bounds = map(config.LATLON_TO_XY, self.bounds)
 
         #generate a lattice of points inside the given polygon for later use
         #the matrix should encompass the entire given polygonal area
@@ -210,6 +221,44 @@ class Agent:
 
 
 
+        ######################################################################
+        # TAHIROVIC-ONLY
+        ######################################################################
+        if config.USE_PURE_TVIC:
+            self.tvic_radius = kwargs.get('tvic_radius',config.TVIC_RADIUS)
+
+            tvic_size = config.T_DENSITY
+            #'explored' = 1 unexplored = 0. this is the entire world
+            tvic_matrix = np.zeros([tvic_size, tvic_size])
+            #mark outside points as explored form the start
+            for x in range(tvic_size):
+                for y in range(tvic_size):
+                    #scale tvic space to real space where the poly is defined
+                    xx,yy = u.scale_range([x,y],
+                                   new_min = -config.WINDOW_METERS/2.,
+                                   new_max = config.WINDOW_METERS/2.,
+                                   org_min = 0,
+                                   org_max = tvic_size)
+                    inside = gm.ptInPoly(self.bounds, [xx,yy])
+                    if not inside:
+                        tvic_matrix[x,y] = 1
+
+            self.tvic_matrix = tvic_matrix
+
+            self.to_tvic = lambda points: u.scale_range(points,
+                                               new_min = 0,
+                                               new_max = self.tvic_matrix.shape[0],
+                                               org_min = -config.WINDOW_METERS/2.,
+                                               org_max = config.WINDOW_METERS/2.)
+
+            self.to_real = lambda points: u.scale_range(points,
+                                               new_min = -config.WINDOW_METERS/2.,
+                                               new_max = config.WINDOW_METERS/2.,
+                                               org_min = 0,
+                                               org_max = self.tvic_matrix.shape[0])
+
+
+
     def draw_self(self):
         """
         draws a representation of the agents own state
@@ -236,14 +285,6 @@ class Agent:
         y *= config.CONTROL_PPM
         vx *= config.CONTROL_PPM
         vy *= config.CONTROL_PPM
-        l = g.Line(g.Point(x,y),g.Point(x+vx,y+vy))
-        l.setArrow('last')
-        l.draw(self.win)
-
-#        vx *= 10
-#        vy *= 10
-
-#        print('####',x,y,vx,vy)
 
         #draw the sonar values
         d += 10
@@ -253,6 +294,11 @@ class Agent:
         cir.setOutline('red')
         cir.draw(self.win)
 
+        #draw an arrow for velocity
+        l = g.Line(g.Point(x,y),g.Point(x+vx,y+vy))
+        l.setArrow('last')
+        l.draw(self.win)
+
         if self.target is not None:
             self.target_g = g.Circle(g.Point(self.target[0]*config.CONTROL_PPM,
                                               self.target[1]*config.CONTROL_PPM),
@@ -260,8 +306,7 @@ class Agent:
             self.target_g.setFill('red')
             self.target_g.setOutline('white')
             self.target_g.draw(self.win)
-#        except:
-#            pass
+
 
     def draw_others(self):
         if config.HEADLESS:
@@ -279,10 +324,7 @@ class Agent:
             y *= config.CONTROL_PPM
             vx *= config.CONTROL_PPM
             vy *= config.CONTROL_PPM
-            if vx>=0 and vy>=0:
-                l = g.Line(g.Point(x,y),g.Point(x+vx,y+vy))
-                l.setFill('gray')
-                l.draw(self.win)
+
 
             #draw the sonar values
             d += 10
@@ -291,6 +333,11 @@ class Agent:
             cir.setFill(color)
             cir.setOutline(color)
             cir.draw(self.win)
+
+            if vx>=0 and vy>=0:
+                l = g.Line(g.Point(x,y),g.Point(x+vx,y+vy))
+                l.setFill('gray')
+                l.draw(self.win)
 
             #draw the target
             if target is not None:
@@ -347,7 +394,7 @@ class Agent:
 
         return times
 
-    def get_enough_measurements(self, enough = 165., take_last = 20, skip_last = 3):
+    def get_enough_measurements(self, take_last = 20, skip_last = 3):
         """
         returns enough measurements for GP to get an 'ok' regression in
         limited time.
@@ -360,6 +407,9 @@ class Agent:
         #for each m-list, take the last N items, then take 'enough' from the
         #rest, combined for all agents. Result should be a homogeneous selection
         #of points across all agents.
+
+        #use the agent-defined number of points as target
+        enough = self.enough_points
 
         #number of points all agents, including self have
         total_points = len(self.measurements)
@@ -375,7 +425,8 @@ class Agent:
             total_points += len(mments)
 
         #if there is only enough points, no need to thin them down.
-        if total_points <= enough:
+        #give it some buffer for the rare missing points from other agents
+        if total_points <= enough+10:
             ret = []
             ret.extend(self.measurements)
             for other in other_mments:
@@ -613,11 +664,6 @@ class Agent:
             means, stds = self.gp.regress(self.inside_points)
             #filter the unexplored points
             unexplored = filter(lambda c: c[1] > config.MIN_STD, zip(self.inside_points, stds, means))
-
-#            unexplored = zip(*unexplored)
-#            unexplored_pts = np.array(unexplored[0])
-#            unexplored_stds = np.array(unexplored[1])
-#            unexplored_means = np.array(unexplored[2])
             unexplored_pts, unexplored_stds, unexplored_means = zip(*unexplored)
 
             if config.AVOID_LAND:
@@ -735,9 +781,6 @@ class Agent:
         print('[I] took '+str(time.time()-start)+' seconds for path stds')
 
         #once the paths are filtered, find out the remaining targets
-#        targets = []
-#        for path in paths:
-#            targets.append(path[-1])
         targets = [pathh[-1] for pathh in paths]
 
 
@@ -765,6 +808,88 @@ class Agent:
         """
         #dont move while calculating a target
         self.send_to_body('set_stop')
+
+        if config.USE_PURE_TVIC:
+            #only use pure tahirovic w/o the GP parts
+
+            #set enough points to a really large value. tvic is fast enough
+            #to use all available measurements all the time.
+            self.enough_points = 9999999999999999
+            mments = self.get_enough_measurements()
+            for m in mments:
+                x,y = m[:2] #tvic does not care about depth
+                #fill the tvic matrix
+                self.fill_tvic([x,y])
+
+            #tvic matrix is now filled, find the mean of unexplored space
+
+            #indicies of elements where the value is 0 = unexplored
+            ix = np.in1d(self.tvic_matrix.ravel(), [0]).reshape(self.tvic_matrix.shape)
+            #list of xs and ys in columns
+            unexp_idx = np.where(ix)
+            #mean of unexplored area
+            mean = np.mean(unexp_idx, axis=1)
+            #mean is in tvic space, get that into real
+            mean = self.to_real(mean)
+            print('[I] Mean:'+str(mean))
+
+            if config.T_DRAW_CENTROID and not config.HEADLESS:
+                xx,yy = mean
+                c = g.Circle(g.Point(xx*config.PPM, yy*config.PPM), 0.5*config.PPM)
+                c.setFill('orange')
+                c.draw(self.win)
+
+            current_pos = self.get_latest_gps()
+            #some candidate points around the agent
+            candidates = u.make_circle_targets(center=current_pos,
+                                               radii = range(self.start_range ,self.end_range),
+                                               count = self.circle_count)
+            #filter candidates that are inside the polygon bounds
+            candidates = filter(lambda p: gm.ptInPoly(self.bounds, p), candidates)
+            candidates = np.array(candidates)
+            #collect unexplored targets and their distances to mean
+            targets = []
+            values = []
+            tvic_candidates = self.to_tvic(candidates)
+            for p in tvic_candidates:
+                #get the tvic version of p to check for exploredness
+                xx,yy = int(p[0]),int(p[1])
+                if xx >= self.tvic_matrix.shape[0]:
+                    xx = self.tvic_matrix.shape[0]-1
+                if yy >= self.tvic_matrix.shape[1]:
+                    yy = self.tvic_matrix.shape[1]-1
+                if self.tvic_matrix[xx,yy] == 0:
+                    rp = self.to_real([p])[0]
+                    m_dist = gm.euclid_distance(rp, mean)
+                    s_dist = gm.euclid_distance(rp, current_pos)
+                    targets.append(rp)
+                    values.append(s_dist**2 + (1./ (m_dist**2)))
+
+            if targets is not None and len(targets) > 0:
+                #choose the point furthest away from mean
+                chosen_idx = np.argmin(values)
+                #this target is in tvic matrix space, scale back to real space
+                target = targets[chosen_idx]
+                self.target = target
+                self.start_range = config.DEFAULT_START_RANGE
+                self.end_range = config.DEFAULT_END_RANGE
+                self.circle_count = config.DEFAULT_CIRCLE_COUNT
+                return True
+            else:
+                #no targets found, increase search radius
+                print('[I] Increasing search radius from '+str(self.end_range)+
+                    ' to '+str(self.end_range + config.SEARCH_INCREMENT))
+                self.start_range = self.end_range
+                self.end_range += config.SEARCH_INCREMENT
+                self.circle_count *= 2
+                if self.end_range >= self.max_range:
+                    print('[I] Maximum radius achieved, no points found.')
+                    print('[M] Going remote, we are done')
+                    self.mode = 'remote'
+                    return False
+            return False
+
+
         #generate targets around the agent
         targets = self.generate_targets()
         #do we have enough targets to make a decision?
@@ -786,12 +911,35 @@ class Agent:
             self.end_range += config.SEARCH_INCREMENT
             self.circle_count *= 2
             if self.end_range >= self.max_range:
-                print('[I] Maximum radius achieved, no points found, going remote mode')
-                self.mode = 'remote'
+                print('[I] Maximum radius achieved, no points found.')
+                #number of points we can use at most. This is the number of mments
+                #this agent knows, including the ones from others.
+                max_points = len(self.measurements)
+                for other_agent in self.other_agents.itervalues():
+                    max_points += len(other_agent['mments'])
+
+                #if we already used ALL of the measurements, and reached max radius,
+                #we are totally done.
+                if self.enough_points >= max_points:
+                    print('[I] Used all measurements too, no target found')
+                    print('[M] Going remote')
+                    self.mode = 'remote'
+                    self.start_range = config.DEFAULT_START_RANGE
+                    self.end_range = config.DEFAULT_END_RANGE
+                    self.circle_count = config.DEFAULT_CIRCLE_COUNT
+                    self.enough_points = config.DEFAULT_ENOUGH
+                    return False
+
+                print('### self enough',self.enough_points, 'max pts', max_points)
+                #we did not use ALL of the measurements yet, try that
+                #simply double the number of points to use
+                #this number of points will be used until a target is found
+                #number of points will be reset when a target is found
+                self.enough_points *= 1.5
+                #reset the radii in case they were increased for this particular search
                 self.start_range = config.DEFAULT_START_RANGE
                 self.end_range = config.DEFAULT_END_RANGE
                 self.circle_count = config.DEFAULT_CIRCLE_COUNT
-                return False
             return False
 
 
@@ -976,55 +1124,70 @@ class Agent:
         print('[I] Bcasted filling values for: '+missing_from+':'+str(len(fill)))
 
 
-#    def check_collision(self):
-#        #this bots velocity object
-#        sX = np.array(self.get_latest_gps())
-#        sV = np.array(self.V)
-#        sR = config.VO_SELF_R
-#        for other_id, other_agent in self.other_agents.iteritems():
-#            #simply getting the last known is enough. If the other agent is
-#            #too far away that we cant get the real-time gps of it, then the
-#            #velocity obstacle that will create is guaranteed to be a
-#            #non-issue. Only if we are close to it == can get real-time data
-#            #from it, will the VO be useful.
-#            mments = other_agent['mments']
-#            last_mment_key = max(mments.keys())
-#            last_mment = mments[last_mment_key]
-#            x,y = last_mment[:2]
-#            vx,vy = last_mment[2:4]
-#            #last known pos of other agent
-#            oX = np.array((x,y))
-#            #relative pos of other agent
-#            orX = oX - sX
-#            oV = np.array((vx,vy))
-#            oR = config.VO_OTHER_R
-#
-#            #distance between center points
-#            d = gm.euclid_distance(sX,oX)
-#            #angle of line that connects the centers
-#            centerline_angle = np.arcsin(orX[1]/d)
-#            #angle between centerline and line that connects self pos to
-#            #outer edge of other's disk+self disk so that we can treat
-#            #self as a point
-#            angle_diff = np.arcsin((oR+sR) / d)
-#            #absolute angles of the lines that connect self point to
-#            #outer edge of other disk on both sides
-#            disk_angle1 = centerline_angle - angle_diff
-#            disk_angle2 = centerline_angle + angle_diff
-#            #now we have a point and angles, we now have vectors for the
-#            #collision cones' two defining edges
-#
-#
-#
-#
-#
-#
-#    def wait_for_collision(self):
-#        #TODO stop if this agent is about to collide with another
-#        #decide stopping by target values
-#        #if no targets known, larger int(id) will move.
-#        pass
+    def will_collide(self, other_pos, other_V):
+        """
+        returns true if this agents velocity is inside the other agents VO.
+        """
+        #TODO fix dis
+        self_pos = np.array(self.get_latest_gps())
+        self_V = self.V
+        other_pos = np.array(other_pos)
+        other_V = np.array(other_V)
+        #vector that points at the other agent center from this center
+        center_vector = other_pos - self_pos
+        #distance between centers
+        dist = gm.euclid_distance(self_pos, other_pos)
+        #angle between center vector and the tangent line to other agent
+        theta = np.arcsin((self.vo_r + self.other_r)/dist)
+        #angle of the center vector
+        alpha = np.arcsin(center_vector[1]/dist)
 
+        #angle of the tangent lines
+        t1_a = alpha+theta
+        t2_a = alpha-theta
+
+        #make a really large triangle out of these two tangent lines to make
+        #checking inclusion easier.
+
+        #one side
+        t1 = np.array([np.cos(t1_a), np.sin(t1_a)]) * 10000
+        t1 += self_pos
+        #other side
+        t2 = np.array([np.cos(t2_a), np.sin(t2_a)]) * 10000
+        t2 += self_pos
+        #three vertices
+        VO = np.array([self_pos, t1, t2])
+        VO += other_V
+
+        print(t1_a,t1,t2_a,t2,VO)
+
+
+    def fill_tvic(self, point):
+#        if config.PAINT_TAHIROVIC and not config.HEADLESS:
+#            c = g.Circle(g.Point(point[0]*config.PPM,point[1]*config.PPM),
+#                                 config.TVIC_RADIUS*config.PPM)
+#            c.setFill('gray')
+#            c.setOutline('gray')
+#            c.draw(self.win)
+
+        tvic_center = self.to_tvic(point)
+        tvic_center = np.round(tvic_center)
+        r = config.TVIC_RADIUS
+        for x in range(int(tvic_center[0])-r, int(tvic_center[0])+r):
+            for y in range(int(tvic_center[1])-r, int(tvic_center[1])+r):
+                xx = x
+                yy = y
+                if xx >= self.tvic_matrix.shape[0]:
+                    xx = self.tvic_matrix.shape[0]-1
+                if yy >= self.tvic_matrix.shape[1]:
+                    yy = self.tvic_matrix.shape[1]-1
+                if xx < 0:
+                    xx = 0
+                if yy < 0:
+                    yy = 0
+
+                if gm.euclid_distance(point, self.to_real([xx,yy])) <= r:
+                    self.tvic_matrix[xx,yy] = 1
 
 
 ###############################################################################
@@ -1211,12 +1374,6 @@ class Agent:
             if key == 't':
                 #save the traces
                 self.save_trace()
-            if key == 'g':
-                #draw the GP regressed surface
-                try:
-                    self.gp.show_surface(self.measurements)
-                except:
-                    print('[E] no surface to show yet')
             if key == 'b':
                 for other_agent in self.other_agents.values():
                     mments = other_agent['mments']
@@ -1228,6 +1385,9 @@ class Agent:
                         c.setFill('red')
                         c.setOutline('red')
                         c.draw(self.win)
+            if key == 'g':
+                plt.matshow(self.tvic_matrix)
+                plt.show(block=False)
 
             #mouse controls
             mouse = self.win.checkMouse()
@@ -1292,11 +1452,43 @@ class Agent:
                 else:
                     #we dont even have enough measurements to regress properly
                     #move the body forward until we do have enough measurements
-#                    print('[I] Moving forward a little to get some measurements')
+                    #this is expected from the operator when running on a
+                    #physical body.
                     self.send_to_body('set_max_speed')
+
+
+            if self.should_reset_target():
+                self.target = None
+                #a new target will be set in the next cycle (very soon)
+
 
         if not config.HEADLESS:
             g.update(config.UPDATE_FPS)
+
+        #we are not done yet.
+        return False
+
+
+    def should_reset_target(self):
+        """
+        return true if this agent should re-set its target
+        """
+        #check if our target is too close to another's.
+        #decide who keeps their target by checking IDs.
+
+        if self.target is not None:
+            for other_agent in self.other_agents.itervalues():
+                other_target = other_agent['target'][0] #target,value
+                if other_target is not None:
+                    dist = gm.euclid_distance(self.target, other_target)
+                    if dist < config.TARGET_PROXIMITY_LIMIT:
+                        if self.id < other_agent['id']:
+                            print('[T] Target too close, I have the lower ID, should re-set target')
+                            return True
+
+
+
+
 
         return False
 
@@ -1329,6 +1521,13 @@ class Agent:
 
             if msg.find('set_target') != -1:
                 #set target has some stuff to parse into NMEA, tcp handles that
+                parts = msg.split(',')
+                msg = parts[0]
+                x = float(parts[1])
+                y = float(parts[2])
+                latlon = config.XY_TO_LATLON([x,y])
+                #need to get values out of hte numpy arrays.
+                msg += ','+str(latlon[0][0])+','+str(latlon[1][0])
                 self.tcp.send(msg,data_type = 'command')
 
     def broadcast(self, msg):
@@ -1412,4 +1611,13 @@ if __name__=='__main__':
         proc.kill()
     agent.save_trace()
 
+    if not config.HEADLESS:
+        filename=config.TRACE_DIR+\
+                        '_'+\
+                        str(id)+\
+                        '_trace_'+\
+                        config.SUFFIX
+        trace = np.loadtxt(filename)
+        plt.plot(trace[:,0],trace[:,1])
+        plt.show(block=False)
 

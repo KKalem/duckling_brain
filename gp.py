@@ -44,7 +44,7 @@ class GP:
         """
         #filter Nones just in case
         measurements = filter(lambda m: not(m[0] is None or m[1] is None or m[2] is None), measurements)
-        print('[GP] fitting '+str(len(measurements))+' points')
+        print('[GP-F] fitting '+str(len(measurements))+' points')
         measurements = np.array(measurements) #make sure its an array now
         X = measurements[:,:2] #positions
         Y = measurements[:,-1] #sonars
@@ -53,27 +53,31 @@ class GP:
         Y = u.scale_range(Y, 0, 1)
 
         start = time.time()
-        self.gpr.fit(X,Y)
-        print('[GP] fitting time; '+str(time.time()-start))
+        try:
+            self.gpr.fit(X,Y)
+        except:
+            print(X)
+            print(Y)
+        print('[GP-F] fitting time; '+str(time.time()-start))
 
 
-        if kwargs.get('save_surface',False):
-            plt.ioff()
-            fig, means, stds = self.show_surface(measurements,
-                                                 show=False,
-                                                 save=True,
-                                                 ID=kwargs.get('ID'),
-                                                 grid_density=40)
+#        if kwargs.get('save_surface',False):
+#            plt.ioff()
+#            fig, means, stds = self.show_surface(measurements,
+#                                                 show=False,
+#                                                 save=True,
+#                                                 ID=kwargs.get('ID'),
+#                                                 grid_density=40)
 
     def regress(self, targets):
         """
         only does prediction, assuming fitting is done
         """
-        print('[GP] regressing '+str(len(targets))+' points')
+        print('[GP-R] regressing '+str(len(targets))+' points')
         start = time.time()
         filter(lambda t: t is not None, targets)
         means, stds = self.gpr.predict(targets, return_std=True)
-        print('[GP] regressing time; '+str(time.time()-start))
+        print('[GP-R] regressing time; '+str(time.time()-start))
         return means, stds
 
 
@@ -101,7 +105,7 @@ class GP:
         #do regression over the grid given the data
         start = time.time()
         means,stds = self.regress(targets)
-        print('[GP] surface regression time; '+str(time.time()-start))
+        print('[GP-R] surface regression time; '+str(time.time()-start))
 
         #reshape and amplify the regression results to be plotted
         means_z = np.reshape(means, [grid_density,grid_density])
@@ -142,15 +146,15 @@ class GP:
             ID = kwargs.get('ID',99)
             name = ID+'_'+str(time.time())
             plt.savefig('etc/surface_'+name+'.png')
-            plt.figure()
+            plt.clf()
             plt.matshow(stds_z)
             plt.colorbar()
             plt.savefig('etc/stds_'+name+'.png')
-            plt.figure()
+            plt.clf()
             plt.matshow(means_z)
             plt.colorbar()
             plt.savefig('etc/means_'+name+'.png')
-            print('saved surfaces')
+            print('[GP-R] Saved surfaces')
 
         return fig, means_z, stds_z
 
@@ -220,10 +224,10 @@ class GP:
 
 if __name__=='__main__':
     k = -1
-    m0 = np.loadtxt('traces/_0_trace_physical')
-    m1 = np.loadtxt('traces/_1_trace_physical')
-    m = np.vstack([m0,m1])
-#    m = m2
+    m0 = np.loadtxt('traces/_0_trace_may18__1495132566.53')
+#    m1 = np.loadtxt('traces/_1_trace_may17')
+#    m = np.vstack([m0,m1])
+    m = m0
 #    more_noise = np.random.rand(m[:,2].shape[0])*40
 #    m[:,2] += more_noise
 
@@ -242,7 +246,7 @@ if __name__=='__main__':
 
 
     gp = GP()
-    skip = 1
+    skip = 2
     gp.fit(m[::skip])
     fig, means, stds = gp.show_surface(m[::skip], show=True, grid_density=20)
 
@@ -251,7 +255,7 @@ if __name__=='__main__':
     plt.colorbar()
     plt.show()
 
-    gp.save_matrix(suffix='_May15_FIXED'+config.SUFFIX)
+#    gp.save_matrix(suffix='_May17_'+config.SUFFIX)
 
 #animation
 #    plt.ioff()

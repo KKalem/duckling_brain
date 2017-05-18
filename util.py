@@ -7,13 +7,15 @@ bunch of utility functions shared across just about everything
 """
 from __future__ import print_function
 import numpy as np
-import config
 
-def scale_range(values, new_min, new_max):
-    org_min = np.min(values)
-    org_max = np.max(values)
+def scale_range(values, new_min, new_max, org_min=None, org_max=None):
+    if org_min is None:
+        org_min = np.min(values)
+    if org_max is None:
+        org_max = np.max(values)
     org_range = org_max - org_min
     new_range = new_max - new_min
+    values = np.array(values)
     return (((values - org_min) * new_range) / org_range) + new_min
 
 
@@ -30,21 +32,6 @@ def make_circle_targets(center=[0,0], count=8, radii=[1]):
             pts.append((px,py))
     return pts[1:]
 
-
-
-def load_trace(id):
-    vals = []
-    with open(config.TRACE_DIR+id+'_trace_'+config.SUFFIX,'r') as f:
-        for line in f:
-            parts = line.split(',')
-            nones = filter(lambda p: p=='None' or p=='None\n', parts)
-            if len(nones) > 0:
-                continue
-            try:
-                vals.append((float(parts[0]), float(parts[1]), float(parts[2])))
-            except:
-                print(parts)
-    return vals
 
 def rand_range(rng):
     """

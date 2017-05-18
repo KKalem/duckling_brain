@@ -105,6 +105,7 @@ class tcpJsonNmeaClient():
     def send(self,data,data_type='request'):
         #obvious
         self.client.send(package_data(data,data_type))
+        print(data)
 
 
     def receive(self,size=1024):
@@ -151,10 +152,10 @@ class tcpJsonNmeaClient():
                     #if not running in sim, the gps input is in lat,lon
                     #instead of meters. convert that using the same
                     #configs used to convert the polygon
-                    x,y = c.LATLON_TO_XY([parts[2],parts[1]])
+                    x,y = c.LATLON_TO_XY([float(parts[1]),float(parts[2])])
 
-                    data['data'] = [x,
-                                    y,
+                    data['data'] = [x[0], #get values out of the numpy arrays
+                                    y[0],
                                     vx,
                                     vy]
 

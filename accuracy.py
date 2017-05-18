@@ -18,12 +18,12 @@ import util as u
 suffix = '_May15_FIXED'+config.SUFFIX
 # load the regressed map and the true map
 truth = np.load(config.TRACE_DIR+'/depthmap.npy')
-means = np.load(config.TRACE_DIR+'/means_May15_FIXEDphysical.npy')
-stds = np.load(config.TRACE_DIR+'/stds_May15_FIXEDphysical.npy')
+means = np.load(config.TRACE_DIR+'/means_May17_may17.npy')
+stds = np.load(config.TRACE_DIR+'/stds_May17_may17.npy')
 
 # load the measurement trace for min/max values
-m0 = np.loadtxt('traces/_0_trace_physical')
-m1 = np.loadtxt('traces/_1_trace_physical')
+m0 = np.loadtxt('traces/_0_trace_may17')
+m1 = np.loadtxt('traces/_1_trace_may17')
 m = np.vstack([m0,m1])
 
 

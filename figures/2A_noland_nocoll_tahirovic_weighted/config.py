@@ -7,7 +7,6 @@ Created on Sat Mar  4 16:15:43 2017
 Bunch of global values for other stuff to read from.
 """
 import numpy as np
-import util as u
 
 #is the agent wokring in sim or on physical?
 #changes the communication stuffs mostly
@@ -18,9 +17,6 @@ SIMULATION = True
 HEADLESS = False
 #use the tahirvoic method?
 USE_TAHIROVIC = True
-#use ONLY the tahirovic method w/o GP?
-#overrides the above
-USE_PURE_TVIC = True
 
 #bounding poly agents will stay in. ccw direction
 if SIMULATION:
@@ -65,70 +61,55 @@ if SIMULATION:
 else:
     from geopy.distance import vincenty
     #in GPS minutes, will be converted to meters
-#    POLY = [[59.360307, 18.052161],
-#            [59.358581, 18.052697],
-#            [59.359098, 18.054961],
-#            [59.360558, 18.054811]]
-    POLY = np.array([[59.349175, 18.071001],
-                     [59.348092, 18.071087],
-                     [59.348065, 18.073040],
-                     [59.349124, 18.072647]])
+    POLY = [[59.360307, 18.052161],
+            [59.358581, 18.052697],
+            [59.359098, 18.054961],
+            [59.360558, 18.054811]]
 
-    latmin,lonmin = list(np.min(POLY,axis=0))
-    latmax,lonmax = list(np.max(POLY,axis=0))
+    #convert to degrees from minutes (60 mins = 1deg)
+#    POLY = map(lambda p: [p[0]/60., p[1]/60.], POLY)
 
-    latmid = (latmin+latmax) /2.
-    lonmid = (lonmin+lonmax) /2.
+    xmin,ymin = list(np.min(POLY,axis=0))
+    xmax,ymax = list(np.max(POLY,axis=0))
 
-    latsize = vincenty([latmax,lonmid],[latmin,lonmid]).meters
-    lonsize = vincenty([latmid,lonmax],[latmid,lonmin]).meters
+    xmid = (xmin+xmax) /2.
+    ymid = (ymin+ymax) /2.
 
-    WINDOW_METERS = max(latsize,lonsize)
+    xsize = vincenty([xmax,ymid],[xmin,ymid]).meters
+    ysize = vincenty([xmid,ymax],[xmid,ymin]).meters
 
-#ASSUME the earth is flat on for this polygon, dont care about the spherical shape
-# map lat,lon to x,y 1:1.
+    WINDOW_METERS = max(xsize,ysize)
 
-    lat_scaled = u.scale_range(POLY[:,0], -WINDOW_METERS/2., WINDOW_METERS/2.)
-    lon_scaled = u.scale_range(POLY[:,1], -WINDOW_METERS/2., WINDOW_METERS/2.)
+    #radius of earth in meters
+    r = 6371000
+    cosphiz = np.cos(np.pi*xmid/180.)
 
-    lat_to_y = lambda lat: u.scale_range([lat],
-                                         -WINDOW_METERS/2.,
-                                         WINDOW_METERS/2.,
-                                         org_min = latmin,
-                                         org_max = latmax)
+    #convert to radians
+    POLY = map(lambda p: [p[0]*np.pi/180., p[1]*np.pi/180.], POLY)
 
-    lon_to_x = lambda lon: u.scale_range([lon],
-                                         -WINDOW_METERS/2.,
-                                         WINDOW_METERS/2.,
-                                         org_min = lonmin,
-                                         org_max = lonmax)
+    #TODO sometihng is flipped here.
+    #convert to meters
+    lat_to_y = lambda lat: r*lat
+    lon_to_x = lambda lon: r*lon*cosphiz
 
-    LATLON_TO_XY = lambda latlon: [lon_to_x(latlon[1]),
-                                   lat_to_y(latlon[0])]
+    POLY = map(lambda p: [lon_to_x(p[1]), lat_to_y(p[0])], POLY)
+
+    #center the polygon to have its middle be [0,0]
+    xmin,ymin = list(np.min(POLY,axis=0))
+    xmax,ymax = list(np.max(POLY,axis=0))
+    xmid = (xmin+xmax) /2.
+    ymid = (ymin+ymax) /2.
+    POLY = map(lambda p: [p[0]-xmid, p[1]-ymid], POLY)
+
+    LATLON_TO_XY = lambda latlon: [lon_to_x(latlon[1])-xmid, lat_to_y(latlon[0])-ymid]
 
 
-    y_to_lat = lambda y: u.scale_range([y],
-                                       latmin,
-                                       latmax,
-                                       org_min = -WINDOW_METERS/2.,
-                                       org_max = WINDOW_METERS/2.
-                                       )
-
-    x_to_lon = lambda x: u.scale_range([x],
-                                       lonmin,
-                                       lonmax,
-                                       org_min = -WINDOW_METERS/2.,
-                                       org_max = WINDOW_METERS/2.
-                                       )
-
-    XY_TO_LATLON = lambda xy: [y_to_lat(xy[1]),
-                               x_to_lon(xy[0])]
 ###############################################################################
 # FILES
 ###############################################################################
 import time
 #suffix added to agent-generated stuff
-SUFFIX = 'may18'+'__'+str(time.time())
+SUFFIX = 'may17'#+'__'+str(time.time())
 #colormap to color the depthmap
 COLORMAP_FILE = 'colormap.matrix'
 #visual of the depthmap
@@ -163,11 +144,9 @@ NETWORK_RANGE = 10
 # TAHIROVIC
 ###############################################################################
 # n x n grid of sampled points.
-T_DENSITY = 200
+T_DENSITY = 80
 # use variance to weight the centroid for tahirovic?
 T_WEIGHTED = True
-#radius to assume an area is explored
-TVIC_RADIUS = 10
 
 
 ###############################################################################
@@ -239,18 +218,11 @@ MEASUREMENT_COUNT_THRESHOLD = 5
 #min number of points to expect to consider choosing one
 MIN_UNEXPLORED = 1
 #default values of smallest search donut. in meters
-
+DEFAULT_START_RANGE = 10
+DEFAULT_END_RANGE = 30
 DEFAULT_CIRCLE_COUNT = 120
-if USE_PURE_TVIC:
-    #use a tighter donut for this, cuz we can
-    DEFAULT_START_RANGE = 7
-    DEFAULT_END_RANGE = 12
-    SEARCH_INCREMENT = 5
-else:
-    DEFAULT_START_RANGE = 10
-    DEFAULT_END_RANGE = 30
-    #incerement in range when no points is found
-    SEARCH_INCREMENT = 20
+#incerement in range when no points is found
+SEARCH_INCREMENT = 20
 #time to wait between broadcasting missing values in seconds
 MISSING_INTERVAL = 5
 #dont flood udp buffers with the same mment, this is for 'real-time' bcasting
@@ -263,8 +235,12 @@ TARGET_PROXIMITY_LIMIT = 15
 
 #distance limit to record measurements for agents. Not moving or moving too slowly
 #causes instabilities for GP.
-DISTANCE_THRESHOLD = 0.3
-
+if SIMULATION:
+    #in meters
+    DISTANCE_THRESHOLD = 0.3
+else:
+    #in GPS minutes
+    DISTANCE_THRESHOLD = 1e-7
 
 #distance threshold to consider a target reached
 if SIMULATION:
@@ -276,7 +252,7 @@ else:
 
 #angle threshold to consider a target 'in front'. In degrees.
 #only used in simulations
-TARGET_ANGLE_THRESHOLD = 0.5
+TARGET_ANGLE_THRESHOLD = 0.1
 
 
 ###############################################################################
