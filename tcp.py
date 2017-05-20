@@ -47,6 +47,7 @@ def package_data(data, data_type='request'):
     package the data into an nmea sentence
     data type can be 'request' or 'command'
     """
+    nmea = 'bad'
 
     if data_type == 'request':
         if data == c.GET_GPS:
@@ -54,15 +55,16 @@ def package_data(data, data_type='request'):
         if data == c.GET_SONAR:
             nmea = '$MSSON,*00\r\n'
     else:
-        #TODO implement NMEA'ing 'set_target' command here
         if data.find('set_target') != -1:
             #this is a set_target command
             cmd,x,y = data.split(',')
             nmea = '$MSSCP,,,'+x+','+y+',*00\r\n'
 
-        if data.find('$MSSTO') != -1:
+        if data.find('$MSSTO') != -1 or data.find('$MSSTA') != -1:
             nmea = data
 
+    if nmea == 'bad':
+        print('[E] BAD DATA!', data)
 
     jason = {'SOURCE':'OZER',
              'TIME_UNIX':int(time.time()),
@@ -104,20 +106,26 @@ class tcpJsonNmeaClient():
 
     def send(self,data,data_type='request'):
         #obvious
-        self.client.send(package_data(data,data_type))
-        print(data)
+        pack = package_data(data,data_type)
+        self.client.send(pack)
+        print('[tcp] Sent;',pack)
+        self.client.send(package_data('$MSSTA,*00', data_type='command'))
+        print('[tcp] ', 'Sent start')
 
 
     def receive(self,size=1024):
-        #read the 4 bytes of header
-        json_len = int(self.client.recv(4))
-        #header contains number of chars to read
-        strjson = self.client.recv(json_len)
         #parse json
         try:
+            #read the 4 bytes of header
+            header = self.client.recv(4)
+            json_len = int(header)
+            #header contains number of chars to read
+            strjson = self.client.recv(json_len)
             jason = json.loads(strjson)
         except:
             print('[E] Json parsing error!')
+            print(header)
+            print(strjson)
             return None
 
         #json has a field 'NMEA_SENTENCES'
@@ -149,10 +157,12 @@ class tcpJsonNmeaClient():
 
                     vx,vy = speed*u.cos(heading), speed*u.sin(heading)
 
+
                     #if not running in sim, the gps input is in lat,lon
                     #instead of meters. convert that using the same
                     #configs used to convert the polygon
                     x,y = c.LATLON_TO_XY([float(parts[1]),float(parts[2])])
+                    print('lat;', parts[1], '->', x ,' lon;',parts[2],'->',y)
 
                     data['data'] = [x[0], #get values out of the numpy arrays
                                     y[0],

@@ -15,17 +15,17 @@ import matplotlib.pyplot as plt
 import config
 import util as u
 
-suffix = '_May15_FIXED'+config.SUFFIX
+suffix='_pure_tahirvoic_'+config.SUFFIX
 # load the regressed map and the true map
 truth = np.load(config.TRACE_DIR+'/depthmap.npy')
-means = np.load(config.TRACE_DIR+'/means_May17_may17.npy')
-stds = np.load(config.TRACE_DIR+'/stds_May17_may17.npy')
+means = np.load(config.TRACE_DIR+'/means_pure_tahirvoic_may18__1495142159.63.npy')
+stds = np.load(config.TRACE_DIR+'/stds_pure_tahirvoic_may18__1495142159.63.npy')
 
 # load the measurement trace for min/max values
-m0 = np.loadtxt('traces/_0_trace_may17')
-m1 = np.loadtxt('traces/_1_trace_may17')
-m = np.vstack([m0,m1])
-
+m0 = np.loadtxt('traces/_0_trace_may18__1495140569.0')
+#m1 = np.loadtxt('traces/_1_trace_may17')
+#m = np.vstack([m0,m1])
+m = m0
 
 #scale the normalized means
 predictions = u.scale_range(means, np.min(m[:,2]), np.max(m[:,2]))

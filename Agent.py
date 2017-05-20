@@ -50,7 +50,7 @@ class Agent:
 
         #remote or auto
         #remote for getting keyboard input to control speed/turn
-        self.mode = 'auto'
+        self.mode = 'remote'
 
         #number of samples to use when fitting GP.
         #this is increased near the end when no 'unexlpored' points
@@ -727,6 +727,9 @@ class Agent:
         path_lens = []
         #known targets of other agents
         other_targets = [other_agent['target'] for other_agent in self.other_agents.values()]
+
+        #TODO current_pos'u da ekle hesaplara
+
         #consider the candidates
         for candidate in targets:
             dist = gm.euclid_distance(path_root, candidate)
@@ -1389,6 +1392,9 @@ class Agent:
                 plt.matshow(self.tvic_matrix)
                 plt.show(block=False)
 
+            if key == 'S':
+                self.tcp.send('$MSSTA,*00', data_type='command')
+
             #mouse controls
             mouse = self.win.checkMouse()
             if mouse is not None:
@@ -1610,6 +1616,7 @@ if __name__=='__main__':
     for proc in agent.sensor_processes:
         proc.kill()
     agent.save_trace()
+    agent.send_to_body('set_stop')
 
     if not config.HEADLESS:
         filename=config.TRACE_DIR+\
@@ -1620,4 +1627,6 @@ if __name__=='__main__':
         trace = np.loadtxt(filename)
         plt.plot(trace[:,0],trace[:,1])
         plt.show(block=False)
+
+
 

@@ -83,7 +83,7 @@ class GP:
 
     def show_surface(self, measurements=None, grid_density=20, **kwargs):
 
-        if not config.SIMULATION:
+        if config.HEADLESS:
             return
 
         #otherwise, regress for a meshgrid
@@ -224,10 +224,12 @@ class GP:
 
 if __name__=='__main__':
     k = -1
-    m0 = np.loadtxt('traces/_0_trace_may18__1495132566.53')
+#    m0 = np.loadtxt('traces/_0_trace_may19_PHYSICALTEST___1495188275.47')
+#    m1 = np.loadtxt('traces/_0_trace_may19_PHYSICALTEST___1495193366.72')
+#    m2 = np.loadtxt('traces/_0_trace_may19_PHYSICALTEST___1495195238.11')
 #    m1 = np.loadtxt('traces/_1_trace_may17')
-#    m = np.vstack([m0,m1])
-    m = m0
+#    m = np.vstack([m0,m1,m2])
+#    m = m2
 #    more_noise = np.random.rand(m[:,2].shape[0])*40
 #    m[:,2] += more_noise
 
@@ -255,7 +257,7 @@ if __name__=='__main__':
     plt.colorbar()
     plt.show()
 
-#    gp.save_matrix(suffix='_May17_'+config.SUFFIX)
+#    gp.save_matrix(suffix='_PHYTEST_19MAY_COMBINED'+config.SUFFIX)
 
 #animation
 #    plt.ioff()

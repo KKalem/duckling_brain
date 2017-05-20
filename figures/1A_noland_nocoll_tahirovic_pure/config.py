@@ -20,7 +20,7 @@ HEADLESS = False
 USE_TAHIROVIC = True
 #use ONLY the tahirovic method w/o GP?
 #overrides the above
-USE_PURE_TVIC = False
+USE_PURE_TVIC = True
 
 #bounding poly agents will stay in. ccw direction
 if SIMULATION:
@@ -64,20 +64,15 @@ if SIMULATION:
 
 else:
     from geopy.distance import vincenty
-#    in GPS minutes, will be converted to meters
-#    POLY = np.array([[59.360307, 18.052161],
-#                     [59.358581, 18.052697],
-#                     [59.359098, 18.054961],
-#                     [59.360558, 18.054811]])
-#    POLY = np.array([[59.349175, 18.071001],
-#                     [59.348092, 18.071087],
-#                     [59.348065, 18.073040],
-#                     [59.349124, 18.072647]])
-
-    POLY = np.array([[59.359856, 18.054179],
-                     [59.359852, 18.052800],
-                     [59.359531, 18.052868],
-                     [59.359581, 18.054383]])
+    #in GPS minutes, will be converted to meters
+#    POLY = [[59.360307, 18.052161],
+#            [59.358581, 18.052697],
+#            [59.359098, 18.054961],
+#            [59.360558, 18.054811]]
+    POLY = np.array([[59.349175, 18.071001],
+                     [59.348092, 18.071087],
+                     [59.348065, 18.073040],
+                     [59.349124, 18.072647]])
 
     latmin,lonmin = list(np.min(POLY,axis=0))
     latmax,lonmax = list(np.max(POLY,axis=0))
@@ -133,7 +128,7 @@ else:
 ###############################################################################
 import time
 #suffix added to agent-generated stuff
-SUFFIX = 'may19_low_std_test_'+'__'+str(time.time())
+SUFFIX = 'may18'+'__'+str(time.time())
 #colormap to color the depthmap
 COLORMAP_FILE = 'colormap.matrix'
 #visual of the depthmap
@@ -219,8 +214,7 @@ else:
 ###############################################################################
 #min. amount of std.dev. to consider a point 'unexplored'
 # 0.13 usually corresponds to about a 1-1.5m radius
-#MIN_STD = 0.13
-MIN_STD = 0.06
+MIN_STD = 0.13
 #MIN_STD = 0.35
 #discount points that will take longer to reach? this is the divider in utility func.
 CARE_ABOUT_TTR = False
