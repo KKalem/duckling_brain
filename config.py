@@ -8,12 +8,16 @@ Bunch of global values for other stuff to read from.
 """
 import numpy as np
 import util as u
+import time
+
+#suffix added to agent-generated stuff
+SUFFIX = '__com_gp_tahir_009__'#+'__'+str(time.time())
 
 #is the agent wokring in sim or on physical?
 #changes the communication stuffs mostly
 #from udp multicasts to tcp connections
 #if true, runs in sim.
-SIMULATION = True
+SIMULATION = False
 #wether the agent has a screen or not.
 HEADLESS = False
 #use the tahirvoic method?
@@ -22,11 +26,14 @@ USE_TAHIROVIC = True
 #overrides the above
 USE_PURE_TVIC = False
 
+#MIN_STD = 0.13
+MIN_STD = 0.09
+
 #bounding poly agents will stay in. ccw direction
 if SIMULATION:
     import geometry as gm
     #everything is in meters
-    WINDOW_METERS = 100.
+    WINDOW_METERS = 50.
     #square side = 2a, centered at 0,0
     a = WINDOW_METERS/2.
     #safety distance to shrink
@@ -131,9 +138,6 @@ else:
 ###############################################################################
 # FILES
 ###############################################################################
-import time
-#suffix added to agent-generated stuff
-SUFFIX = 'may19_low_std_test_'+'__'+str(time.time())
 #colormap to color the depthmap
 COLORMAP_FILE = 'colormap.matrix'
 #visual of the depthmap
@@ -159,7 +163,7 @@ UPDATE_FPS = 60.
 #of the square area
 WINDOW_METERS = WINDOW_METERS #1k final
 #should the agent ignore broadcasts that are far away?
-SIMULATE_NETWORK_BREAKAGE = False
+SIMULATE_NETWORK_BREAKAGE = True
 #range to start ignoring messages in meters
 NETWORK_RANGE = 10
 
@@ -217,18 +221,17 @@ else:
 ###############################################################################
 # AGENT BEHAVIOUR
 ###############################################################################
-#min. amount of std.dev. to consider a point 'unexplored'
-# 0.13 usually corresponds to about a 1-1.5m radius
+#max. amount of std.dev. to consider a point 'explored', above this, the point
+#will be considered 'unexplored'
 #MIN_STD = 0.13
-MIN_STD = 0.06
-#MIN_STD = 0.35
+#MIN_STD = 0.09
 #discount points that will take longer to reach? this is the divider in utility func.
-CARE_ABOUT_TTR = False
+CARE_ABOUT_TTR = True
 #should the agent avoid land?
 AVOID_LAND = False
 
 #roughly number of points to use when fitting GP. This is increased near the end.
-DEFAULT_ENOUGH = 165
+DEFAULT_ENOUGH = 400
 
 #velocity obstacle agent disc radius assumptions. Keep in mind that there is a delay
 #in communications, so the 'other' radius should probably be larger than self radius
@@ -300,13 +303,13 @@ CONTROL_WIN_SIZE = 600
 if SIMULATION:
     PAINT_EXPLORED = False
     PAINT_UNEXPLORED = False
-    PAINT_TAHIROVIC = True
-    PAINT_LAND = True
+    PAINT_TAHIROVIC = False
+    PAINT_LAND = False
 else:
     PAINT_EXPLORED = False
     PAINT_UNEXPLORED = False
     PAINT_TAHIROVIC = False
-    PAINT_LAND = True
+    PAINT_LAND = False
 #draw the tahirovic centroid on the canvas?
 T_DRAW_CENTROID = True
 #display size in inches of screen

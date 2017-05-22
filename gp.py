@@ -117,15 +117,13 @@ class GP:
         #figures and stuff
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
+        ax.azim=45
+        ax.elev=-160
 
         #plot the fancy surfaces
         ax.plot_surface(t_ys, t_xs, means_z,
                         rstride=1, cstride=1,
                         cmap=colormap, linewidth=0, antialiased=True)
-
-        ax.plot_surface(t_ys, t_xs, means_z+stds_z*1.9600,
-                        rstride=1, cstride=1, cmap='Greens', alpha=0.5,
-                        linewidth=0, antialiased=True)
 
         if measurements is not None:
             measurements = filter(lambda m: not(m[0] is None or m[1] is None or m[2] is None), measurements)
@@ -133,9 +131,21 @@ class GP:
             X = measurements[:,:2] #positions
             Y = measurements[:,-1] #sonars
             #normalize the depth values
-#            Y = Y/float(np.max(Y)) - 0.5
             Y = u.scale_range(Y, 0, 1)
             ax.plot3D(X[:,0], X[:,1], Y, '.', color='red')
+
+        if kwargs.get('separate',False):
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            ax.azim=45
+            ax.elev=40
+            ax.plot_surface(t_ys, t_xs, stds_z,
+                            rstride=1, cstride=1, cmap='Greens', alpha=0.9,
+                            linewidth=0, antialiased=True)
+        else:
+            ax.plot_surface(t_ys, t_xs, means_z+stds_z*1.9600,
+                            rstride=1, cstride=1, cmap='Greens', alpha=0.5,
+                            linewidth=0, antialiased=True)
 
         plt.xlabel('x')
         plt.ylabel('y')
@@ -232,19 +242,6 @@ if __name__=='__main__':
 #    m = m2
 #    more_noise = np.random.rand(m[:,2].shape[0])*40
 #    m[:,2] += more_noise
-
-#    import Agent
-#    a = Agent.Agent('1')
-#    a.measurements = list(m1)
-#
-#    mm = {}
-#    m0 = list(m0)
-#    for i in range(len(m0)):
-#        mm[i] = list(m0[i])
-#    a.other_agents = {'1':{'mments':mm}}
-#
-#    m = a.get_enough_measurements()
-
 
 
     gp = GP()

@@ -179,17 +179,13 @@ class Agent:
                                   autoflush=False)
 
 
-#            self.win.setCoords(xmin*config.CONTROL_PPM,
-#                               ymin*config.CONTROL_PPM,
-#                               xmax*config.CONTROL_PPM,
-#                               ymax*config.CONTROL_PPM)
             self.win.setCoords(-config.CONTROL_WIN_SIZE/2., -config.CONTROL_WIN_SIZE/2.,
                           config.CONTROL_WIN_SIZE/2., config.CONTROL_WIN_SIZE/2.)
             self.win.setBackground(g.color_rgb(220,250,255))
 
-            #some debug text to display on the control window
-#            self.debugtext = g.Text(g.Point(-config.CONTROL_WIN_SIZE/2.+70,0),'No-text')
-#            self.debugtext.draw(self.win)
+            #a canvas to draw stuff on
+            self.bg = g.Image(g.Point(0,0),config.CONTROL_WIN_SIZE,config.CONTROL_WIN_SIZE)
+
 
             #draw the bounding polygon
             rect_g = map(lambda l: g.Point(l[0]*config.CONTROL_PPM, l[1]*config.CONTROL_PPM), self.bounds)
@@ -1167,11 +1163,10 @@ class Agent:
 
     def fill_tvic(self, point):
 #        if config.PAINT_TAHIROVIC and not config.HEADLESS:
-#            c = g.Circle(g.Point(point[0]*config.PPM,point[1]*config.PPM),
-#                                 config.TVIC_RADIUS*config.PPM)
-#            c.setFill('gray')
-#            c.setOutline('gray')
-#            c.draw(self.win)
+#            self.bg.setPixel(int(point[0]*config.PPM)+config.CONTROL_WIN_SIZE/2,
+#                             int(point[1]*config.PPM)+config.CONTROL_WIN_SIZE/2,
+#                             'gray')
+
 
         tvic_center = self.to_tvic(point)
         tvic_center = np.round(tvic_center)
@@ -1389,8 +1384,14 @@ class Agent:
                         c.setOutline('red')
                         c.draw(self.win)
             if key == 'g':
-                plt.matshow(self.tvic_matrix)
-                plt.show(block=False)
+                if config.USE_PURE_TVIC:
+                    plt.matshow(self.tvic_matrix)
+                    plt.show(block=False)
+                else:
+                    fig, means, stds = self.gp.show_surface(show=False)
+                    plt.matshow(stds)
+                    plt.colorbar()
+                    plt.show(block=False)
 
             if key == 'S':
                 self.tcp.send('$MSSTA,*00', data_type='command')

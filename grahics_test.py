@@ -6,21 +6,14 @@ Created on Fri Mar  3 15:39:46 2017
 """
 from __future__ import print_function
 import graphics as g
+import numpy as np
 
-try:
-    win = g.GraphWin('test',500,500, autoflush=False)
+win = g.GraphWin('test',500,500, autoflush=False)
+img = g.Image(g.Point(0,0),500,500)
 
-    c = g.Circle(g.Point(0,0), 20)
-    c.draw(win)
-    i = 0
-    while True:
-        g.update(30)
-        mouse = win.checkMouse()
-        if mouse is not None:
-            x,y = mouse.getX(), mouse.getY()
-            c._reconfig(center, (x,y))
+img.draw(win)
 
-except:
-    win.close()
+for i in range(100):
+    img.setPixel(250+i,250+i,'black')
 
-win.close()
+
