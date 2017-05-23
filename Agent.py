@@ -183,8 +183,14 @@ class Agent:
                           config.CONTROL_WIN_SIZE/2., config.CONTROL_WIN_SIZE/2.)
             self.win.setBackground(g.color_rgb(220,250,255))
 
-            #a canvas to draw stuff on
-            self.bg = g.Image(g.Point(0,0),config.CONTROL_WIN_SIZE,config.CONTROL_WIN_SIZE)
+#            #a canvas to draw stuff on
+#            self.bg = g.Image(g.Point(0,0),config.CONTROL_WIN_SIZE,config.CONTROL_WIN_SIZE)
+
+            self.debugtext = g.Text(g.Point(0,config.CONTROL_WIN_SIZE/2. -10),'debug-text')
+            self.debugtext.anchor = g.Point(0,0)
+            self.debugtext.draw(self.win)
+
+            self.debug_map = {}
 
 
             #draw the bounding polygon
@@ -261,6 +267,7 @@ class Agent:
         """
         if config.HEADLESS:
             return
+
         i = 0
         max_i = len(self.measurements)
         nones = [0]
@@ -290,10 +297,11 @@ class Agent:
         cir.setOutline('red')
         cir.draw(self.win)
 
-        #draw an arrow for velocity
-        l = g.Line(g.Point(x,y),g.Point(x+vx,y+vy))
-        l.setArrow('last')
-        l.draw(self.win)
+
+#        #draw an arrow for velocity
+#        l = g.Line(g.Point(x,y),g.Point(x+vx,y+vy))
+#        l.setArrow('last')
+#        l.draw(self.win)
 
         if self.target is not None:
             self.target_g = g.Circle(g.Point(self.target[0]*config.CONTROL_PPM,
@@ -303,6 +311,26 @@ class Agent:
             self.target_g.setOutline('white')
             self.target_g.draw(self.win)
 
+        #update debug text
+        self.debug_map['x,y:'] = [str(x/config.CONTROL_PPM)[:6],
+                                  str(y/config.CONTROL_PPM)[:6]]
+        if self.target is not None:
+            self.debug_map['Target:']=[str(self.target[0])[:6],str(self.target[1])[:6]]
+            self.debug_map['to target'] = gm.euclid_distance(self.get_latest_gps(),
+                                                             self.target)
+        else:
+            self.debug_map['Target:']=self.target
+        self.debug_map['len(m):'] = max_i
+
+        txt = ''
+        for key,value in self.debug_map.iteritems():
+            txt += str(key)
+            txt += ' '
+            txt += str(value)
+            txt += '\n'
+
+        self.debugtext.setText(txt)
+        self.debugtext.draw(self.win)
 
     def draw_others(self):
         if config.HEADLESS:
@@ -641,9 +669,75 @@ class Agent:
                     c.draw(self.win)
             print('[I] took '+str(time.time()-start)+' seconds for painting')
         #####
-
-
         return targets
+
+    def get_hybrid_space(self):
+        """
+        returns the centroid and unexplored space defined by the std dev. of the
+        inside points.
+        """
+        #TODO regularly freeze explored areas and remove measurements that are
+        #inside the frozen area to keep the number of measurements small
+
+        #instead of following the variance from self, follow high variance point
+        #w/ respect to 'unexplored mean' point
+        #to find the mean of unexplored land, we must regress for the entire
+        #map and filter explored areas.
+
+
+        self.gp.fit(self.get_enough_measurements(), ID=self.id)
+        #use the std of each point as a weight
+        means, stds = self.gp.regress(self.inside_points)
+        #filter the unexplored points
+        unexplored = filter(lambda c: c[1] > config.MIN_STD, zip(self.inside_points, stds, means))
+        unexplored_pts, unexplored_stds, unexplored_means = zip(*unexplored)
+
+        if config.AVOID_LAND:
+            #filter out land
+            scaled_means, unexplored_pts, unexplored_stds = self.filter_land(unexplored_means,
+                                                                             unexplored_pts,
+                                                                             unexplored_stds)
+
+        if config.PAINT_TAHIROVIC:
+            #normalize means for painting
+            depth_colors = u.scale_range(means, 0,255)
+            for p,depth_color in zip(self.inside_points,depth_colors):
+                    center = g.Point(p[0]*config.CONTROL_PPM,p[1]*config.CONTROL_PPM)
+                    c = g.Circle(center,3)
+                    color = g.color_rgb(30,200, depth_color)
+                    c.setFill(color)
+                    c.setOutline(color)
+                    c.draw(self.win)
+
+            std_colors = u.scale_range(unexplored_stds, 0,255)
+            for p,std_color in zip(unexplored_pts,std_colors):
+                    center = g.Point(p[0]*config.CONTROL_PPM,p[1]*config.CONTROL_PPM)
+                    c = g.Circle(center,3)
+                    color = g.color_rgb(140,std_color,30)
+                    c.setFill(color)
+                    c.setOutline(color)
+                    c.draw(self.win)
+
+        if config.T_WEIGHTED:
+            pts_stds = map(lambda c: (c[0][0],c[0][1],c[1]), zip(unexplored_pts, unexplored_stds))
+            pts_stds = np.array(pts_stds)
+            xcentroid = np.sum(pts_stds[:,0]*pts_stds[:,2]) / np.sum(pts_stds[:,2])
+            ycentroid = np.sum(pts_stds[:,1]*pts_stds[:,2]) / np.sum(pts_stds[:,2])
+        else:
+            xcentroid,ycentroid = np.mean(unexplored_pts,axis=0)
+
+        #use the centroid for path calculations
+        path_root = [xcentroid,ycentroid]
+
+
+        if config.T_DRAW_CENTROID:
+            center = g.Point(xcentroid*config.CONTROL_PPM,ycentroid*config.CONTROL_PPM)
+            c = g.Circle(center,3)
+            c.setFill('orange')
+            c.draw(self.win)
+            print('[I] Centroid:'+str(path_root))
+
+        return path_root, unexplored_pts
 
 
     def choose_target(self, targets):
@@ -651,152 +745,126 @@ class Agent:
         returns the target point that is quickest to reach with the most std deviation
         """
         if config.USE_TAHIROVIC:
-            #instead of following the variance from self, follow high variance point
-            #w/ respect to 'unexplored mean' point
-            #to find the mean of unexplored land, we must regress for the entire
-            #map and filter explored areas.
+            #HYBRID selection
+            #doesnt care about the targets input of this function at all.
+            #weighted centroid defined by std of the land
+            centroid, unexplored_pts = self.get_hybrid_space()
+            #position of agent
+            current_pos = self.get_latest_gps()
 
-            #use the std of each point as a weight
-            means, stds = self.gp.regress(self.inside_points)
-            #filter the unexplored points
-            unexplored = filter(lambda c: c[1] > config.MIN_STD, zip(self.inside_points, stds, means))
-            unexplored_pts, unexplored_stds, unexplored_means = zip(*unexplored)
+            if len(unexplored_pts) <= 0:
+                #we are done
+                return None,-1
 
-            if config.AVOID_LAND:
-                #filter out land
-                scaled_means, unexplored_pts, unexplored_stds = self.filter_land(unexplored_means,
-                                                                                 unexplored_pts,
-                                                                                 unexplored_stds)
+            values = []
+            targets = []
+            for pt in unexplored_pts:
+                #distance to self and centroid
+                s_dist = gm.euclid_distance(current_pos, pt)
+                m_dist = gm.euclid_distance(centroid, pt)
+                if s_dist >= config.DEFAULT_START_RANGE:
+                    targets.append(pt)
+                    values.append(s_dist**2 + (1./ (m_dist**2)))
 
-            if config.PAINT_TAHIROVIC:
-                #normalize means for painting
-                depth_colors = u.scale_range(means, 0,255)
-                for p,depth_color in zip(self.inside_points,depth_colors):
-                        center = g.Point(p[0]*config.CONTROL_PPM,p[1]*config.CONTROL_PPM)
-                        c = g.Circle(center,3)
-                        color = g.color_rgb(30,200, depth_color)
-                        c.setFill(color)
-                        c.setOutline(color)
-                        c.draw(self.win)
+            if len(targets) <= 0:
+                #no target to go
+                return None,-1
 
-                std_colors = u.scale_range(unexplored_stds, 0,255)
-                for p,std_color in zip(unexplored_pts,std_colors):
-                        center = g.Point(p[0]*config.CONTROL_PPM,p[1]*config.CONTROL_PPM)
-                        c = g.Circle(center,3)
-                        color = g.color_rgb(140,std_color,30)
-                        c.setFill(color)
-                        c.setOutline(color)
-                        c.draw(self.win)
+            #minimize the objective, choose target
+            chosen_idx = np.argmin(values)
+            return targets[chosen_idx], values[chosen_idx]
 
-            if config.T_WEIGHTED:
-                pts_stds = map(lambda c: (c[0][0],c[0][1],c[1]), zip(unexplored_pts, unexplored_stds))
-                pts_stds = np.array(pts_stds)
-                xcentroid = np.sum(pts_stds[:,0]*pts_stds[:,2]) / np.sum(pts_stds[:,2])
-                ycentroid = np.sum(pts_stds[:,1]*pts_stds[:,2]) / np.sum(pts_stds[:,2])
-            else:
-                xcentroid,ycentroid = np.mean(unexplored_pts,axis=0)
 
-            #use the centroid for path calculations
-            path_root = [xcentroid,ycentroid]
-
-            if config.T_DRAW_CENTROID:
-                center = g.Point(xcentroid*config.CONTROL_PPM,ycentroid*config.CONTROL_PPM)
-                c = g.Circle(center,3)
-                c.setFill('orange')
-                c.draw(self.win)
-                print('[I] Centroid:'+str(path_root))
         else:
+            #GREEDY selection
             #use current pos for paths
             path_root = self.get_latest_gps()
+            #current pos of agent for time calcs.
+            current_pos = self.get_latest_gps()
+            #the value of a point is all the values on the path to that point
+            path_stds = []
+            target_stds = []
+            start = time.time()
+            #actual paths as sepatate lists
+            paths = []
+            #put all paths into a single list for GP to regress. Looping over paths
+            #takes forever and is inefficient
+            flat_paths = []
+            path_lens = []
+            #known targets of other agents
+            other_targets = [other_agent['target'] for other_agent in self.other_agents.values()]
 
-        #current pos of agent for time calcs.
-        current_pos = self.get_latest_gps()
-        #the value of a point is all the values on the path to that point
-        path_stds = []
-        target_stds = []
-        start = time.time()
-        #actual paths as sepatate lists
-        paths = []
-        #put all paths into a single list for GP to regress. Looping over paths
-        #takes forever and is inefficient
-        flat_paths = []
-        path_lens = []
-        #known targets of other agents
-        other_targets = [other_agent['target'] for other_agent in self.other_agents.values()]
-
-        #TODO current_pos'u da ekle hesaplara
-
-        #consider the candidates
-        for candidate in targets:
-            dist = gm.euclid_distance(path_root, candidate)
-            path = gm.subdividePath([path_root, candidate], int(dist))
-            #we dont want paths that will go near a known target of another agent
-            too_close = False
-            for point in path:
-                for other_target, other_target_value in other_targets:
-                    if other_target is None or other_target_value == -1:
-                        continue
-                    dist = gm.euclid_distance(point, other_target)
-                    if dist < config.TARGET_PROXIMITY_LIMIT:
-                        too_close = True
+            #consider the candidates
+            for candidate in targets:
+                dist = gm.euclid_distance(path_root, candidate)
+                path = gm.subdividePath([path_root, candidate], int(dist))
+                #we dont want paths that will go near a known target of another agent
+                too_close = False
+                for point in path:
+                    for other_target, other_target_value in other_targets:
+                        if other_target is None or other_target_value == -1:
+                            continue
+                        dist = gm.euclid_distance(point, other_target)
+                        if dist < config.TARGET_PROXIMITY_LIMIT:
+                            too_close = True
+                            break
+                    if too_close:
                         break
-                if too_close:
-                    break
 
-            if not too_close:
-                flat_paths.extend(path)
-                paths.append(path)
-                path_lens.append(len(path))
+                if not too_close:
+                    flat_paths.extend(path)
+                    paths.append(path)
+                    path_lens.append(len(path))
 
-        if len(flat_paths) > 0:
-            #regress for all paths at once
-            all_means, all_stds = self.gp.regress(flat_paths)
-        else:
-            #no possible paths found
-            return None,-1
-
-
-        #separate the paths again
-        for i in range(len(path_lens)):
-            if i == 0:
-                prev = 0
-                stds = all_stds[0:path_lens[i]]
-                means = all_means[0:path_lens[i]]
+            if len(flat_paths) > 0:
+                #regress for all paths at once
+                all_means, all_stds = self.gp.regress(flat_paths)
             else:
-                prev = path_lens[i-1]
-                stds = all_stds[prev + 1 : prev + path_lens[i]]
-                means = all_means[prev + 1 : prev + path_lens[i]]
-
-            if config.AVOID_LAND:
-                #dont consider a path that goes through a land
-                #TODO instead, pathfind around said land
-                scaled_means = self.scale_means(means)
-                contains_land = map(lambda sm: sm < config.DEPTH_LIMIT, scaled_means)
-                if any(contains_land):
-                    pass
-
-            path_stds.append(sum(stds))
-            target_stds.append(stds[-1]) #last one is the candidate always
-        print('[I] took '+str(time.time()-start)+' seconds for path stds')
-
-        #once the paths are filtered, find out the remaining targets
-        targets = [pathh[-1] for pathh in paths]
+                #no possible paths found
+                return None,-1
 
 
-        if config.CARE_ABOUT_TTR:
-            #time to reach these candidate points
-            times = self.time_to_reach(current_pos, targets)
-            times = np.array(times)
-            path_stds = np.array(path_stds)
-            target_stds = np.array(target_stds)
-            #value of the candidates. quickest most deviating point please
-            values = path_stds / times
-        else:
-            values = path_stds
+            #separate the paths again
+            for i in range(len(path_lens)):
+                if i == 0:
+                    prev = 0
+                    stds = all_stds[0:path_lens[i]]
+                    means = all_means[0:path_lens[i]]
+                else:
+                    prev = path_lens[i-1]
+                    stds = all_stds[prev + 1 : prev + path_lens[i]]
+                    means = all_means[prev + 1 : prev + path_lens[i]]
 
-        best_point = np.argmax(values)
-        print('[I] chosen target value',values[best_point])
-        return targets[best_point], values[best_point]
+                if config.AVOID_LAND:
+                    #dont consider a path that goes through a land
+                    #TODO instead, pathfind around said land
+                    scaled_means = self.scale_means(means)
+                    contains_land = map(lambda sm: sm < config.DEPTH_LIMIT, scaled_means)
+                    if any(contains_land):
+                        pass
+
+                path_stds.append(sum(stds))
+                target_stds.append(stds[-1]) #last one is the candidate always
+            print('[I] took '+str(time.time()-start)+' seconds for path stds')
+
+            #once the paths are filtered, find out the remaining targets
+            targets = [pathh[-1] for pathh in paths]
+
+
+            if config.CARE_ABOUT_TTR:
+                #time to reach these candidate points
+                times = self.time_to_reach(current_pos, targets)
+                times = np.array(times)
+                path_stds = np.array(path_stds)
+                target_stds = np.array(target_stds)
+                #value of the candidates. quickest most deviating point please
+                values = path_stds / times
+            else:
+                values = path_stds
+
+            best_point = np.argmax(values)
+            print('[I] chosen target value',values[best_point])
+            return targets[best_point], values[best_point]
 
 
     def try_setting_target(self):
@@ -888,6 +956,12 @@ class Agent:
                     return False
             return False
 
+        if config.USE_TAHIROVIC:
+            #tahirvoic doesnt need donut targets around it to be generated
+            self.target, self.target_value = self.choose_target([])
+            if self.target is None:
+                return False
+            return True
 
         #generate targets around the agent
         targets = self.generate_targets()
@@ -1388,10 +1462,12 @@ class Agent:
                     plt.matshow(self.tvic_matrix)
                     plt.show(block=False)
                 else:
-                    fig, means, stds = self.gp.show_surface(show=False)
+                    fig, means, stds = self.gp.show_surface(show=False, grid_density=100)
                     plt.matshow(stds)
                     plt.colorbar()
+                    plt.matshow(stds<config.MIN_STD)
                     plt.show(block=False)
+
 
             if key == 'S':
                 self.tcp.send('$MSSTA,*00', data_type='command')
@@ -1439,13 +1515,20 @@ class Agent:
                 #got a target, we should be moving towards it, or already reached
                 #reached target?
                 dist = gm.euclid_distance(self.get_latest_gps(), self.target)
-                if dist < config.TARGET_DISTANCE_THRESHOLD + 2:
+                if dist <= config.TARGET_DISTANCE_THRESHOLD + 2:
+                    self.debug_map['state:'] = 'reached target'
                     #we have a target and we reached it.
                     target_set = self.try_setting_target()
                     if target_set:
+                        self.debug_map['state:'] = 'set new target(1)'
                         self.set_body_target(self.target)
+                    else:
+                        self.debug_map['state:'] = 'cant set target?(1)'
+                        pass
                 else:
                     #we have a target but not reached yet. Wait to reach it
+                    self.debug_map['state:'] = 'waiting to reach target '+\
+                        str(dist)+' '+str(config.TARGET_DISTANCE_THRESHOLD+2)
                     pass
             else:
                 #we dont have a target
@@ -1455,8 +1538,13 @@ class Agent:
                     #we do have enough measurements
                     target_set = self.try_setting_target()
                     if target_set:
+                        self.debug_map['state:'] = 'set new target(2)'
                         self.set_body_target(self.target)
+                    else:
+                        self.debug_map['state:'] = 'cant set target?(2)'
+                        pass
                 else:
+                    self.debug_map['state:'] = 'not enough measurements'
                     #we dont even have enough measurements to regress properly
                     #move the body forward until we do have enough measurements
                     #this is expected from the operator when running on a
@@ -1618,16 +1706,6 @@ if __name__=='__main__':
         proc.kill()
     agent.save_trace()
     agent.send_to_body('set_stop')
-
-    if not config.HEADLESS:
-        filename=config.TRACE_DIR+\
-                        '_'+\
-                        str(id)+\
-                        '_trace_'+\
-                        config.SUFFIX
-        trace = np.loadtxt(filename)
-        plt.plot(trace[:,0],trace[:,1])
-        plt.show(block=False)
 
 
 

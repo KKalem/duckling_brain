@@ -11,7 +11,10 @@ import util as u
 import time
 
 #suffix added to agent-generated stuff
-SUFFIX = '__1k_hybrid_009__'#+'__'+str(time.time())
+SUFFIX = '__1k_hybrid_004__'#+'__'+str(time.time())
+
+
+#1k_hybrid_004 -> 67k seconds
 
 #is the agent wokring in sim or on physical?
 #changes the communication stuffs mostly
@@ -27,7 +30,8 @@ USE_TAHIROVIC = True
 USE_PURE_TVIC = False
 
 #MIN_STD = 0.13
-MIN_STD = 0.09
+#MIN_STD = 0.09
+MIN_STD = 0.04
 
 #bounding poly agents will stay in. ccw direction
 if SIMULATION:
@@ -163,7 +167,7 @@ UPDATE_FPS = 60.
 #of the square area
 WINDOW_METERS = WINDOW_METERS #1k final
 #should the agent ignore broadcasts that are far away?
-SIMULATE_NETWORK_BREAKAGE = True
+SIMULATE_NETWORK_BREAKAGE = False
 #range to start ignoring messages in meters
 NETWORK_RANGE = 10
 
@@ -231,7 +235,7 @@ CARE_ABOUT_TTR = True
 AVOID_LAND = False
 
 #roughly number of points to use when fitting GP. This is increased near the end.
-DEFAULT_ENOUGH = 400
+DEFAULT_ENOUGH = 165
 
 #velocity obstacle agent disc radius assumptions. Keep in mind that there is a delay
 #in communications, so the 'other' radius should probably be larger than self radius
@@ -252,14 +256,14 @@ MIN_UNEXPLORED = 1
 DEFAULT_CIRCLE_COUNT = 120
 if USE_PURE_TVIC:
     #use a tighter donut for this, cuz we can
-    DEFAULT_START_RANGE = 7
+    DEFAULT_START_RANGE = 5
     DEFAULT_END_RANGE = 12
     SEARCH_INCREMENT = 5
 else:
-    DEFAULT_START_RANGE = 10
+    DEFAULT_START_RANGE = 20 #TODO decrease this
     DEFAULT_END_RANGE = 30
     #incerement in range when no points is found
-    SEARCH_INCREMENT = 20
+    SEARCH_INCREMENT = 10
 #time to wait between broadcasting missing values in seconds
 MISSING_INTERVAL = 5
 #dont flood udp buffers with the same mment, this is for 'real-time' bcasting
@@ -278,10 +282,10 @@ DISTANCE_THRESHOLD = 0.3
 #distance threshold to consider a target reached
 if SIMULATION:
     #in meters
-    TARGET_DISTANCE_THRESHOLD = 2.
+    TARGET_DISTANCE_THRESHOLD = 1.
 else:
     #in meters
-    TARGET_DISTANCE_THRESHOLD = 2.
+    TARGET_DISTANCE_THRESHOLD = 1.
 
 #angle threshold to consider a target 'in front'. In degrees.
 #only used in simulations

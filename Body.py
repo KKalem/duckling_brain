@@ -280,7 +280,7 @@ class DynamicBody:
             s.accel = 0.5 - 0.222*(s.speed**2)
         else:
             # no reversing and braking=not accelarating
-            s.accel = 0.
+            s.accel = -1.
 
 
         #######################################################################
@@ -289,7 +289,7 @@ class DynamicBody:
         #change in heading
         s.heading += s.turn *dt
 
-        if s.accel > 0:
+        if s.accel >= 0:
             s.speed = self.max_speed
         else:
             s.speed = 0

@@ -23,16 +23,25 @@ trace = config.SUFFIX
 
 m0 = np.loadtxt('traces/'+trace0)
 m1 = np.loadtxt('traces/'+trace1)
-m = np.vstack((m0,m1))
+to = 999999999
+m = np.vstack((m0[:to],m1[:to]))
 
 
 #%%
+skip = 35
 gpr = gp.GP()
-gpr.fit(m)
+gpr.fit(m[::skip])
 
-#fig, means, stds = gpr.show_surface(m, show=True, grid_density=30)
+fig, means, stds = gpr.show_surface(m, show=True, grid_density=200)
 gpr.save_matrix(suffix=trace)
+plt.matshow(stds)
+plt.colorbar()
 
+explored = stds<0.04
+plt.matshow(explored.reshape(stds.shape))
+
+#import sys
+#sys.exit(0)
 #%%
 # load the regressed map and the true map
 truth = np.load('traces/depthmap.npy')

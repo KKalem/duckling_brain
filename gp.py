@@ -33,7 +33,8 @@ class GP:
         kernel = kernels.ConstantKernel(0.5)
 #        kernel += kernels.Matern(length_scale = 0.5, nu = 2.5)
 
-        kernel += kernels.RBF(length_scale=5)
+#        kernel += kernels.RBF(length_scale=5)
+        kernel += kernels.RationalQuadratic(length_scale = 0.5 , alpha=1.)
         kernel += kernels.WhiteKernel(noise_level = 0.0001)
         self.gpr = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=15)
         #TODO tune/play with everything above
@@ -233,26 +234,26 @@ class GP:
         print('[GP] Done')
 
 if __name__=='__main__':
-    k = -1
-#    m0 = np.loadtxt('traces/_0_trace_may19_PHYSICALTEST___1495188275.47')
-#    m1 = np.loadtxt('traces/_0_trace_may19_PHYSICALTEST___1495193366.72')
-#    m2 = np.loadtxt('traces/_0_trace_may19_PHYSICALTEST___1495195238.11')
-#    m1 = np.loadtxt('traces/_1_trace_may17')
-#    m = np.vstack([m0,m1,m2])
-#    m = m2
-#    more_noise = np.random.rand(m[:,2].shape[0])*40
-#    m[:,2] += more_noise
-
-
-    gp = GP()
-    skip = 2
-    gp.fit(m[::skip])
-    fig, means, stds = gp.show_surface(m[::skip], show=True, grid_density=20)
-
-
-    plt.matshow(stds, origin='lower')
-    plt.colorbar()
-    plt.show()
+#    k = -1
+##    m0 = np.loadtxt('traces/_0_trace_may19_PHYSICALTEST___1495188275.47')
+##    m1 = np.loadtxt('traces/_0_trace_may19_PHYSICALTEST___1495193366.72')
+##    m2 = np.loadtxt('traces/_0_trace_may19_PHYSICALTEST___1495195238.11')
+##    m1 = np.loadtxt('traces/_1_trace_may17')
+##    m = np.vstack([m0,m1,m2])
+##    m = m2
+##    more_noise = np.random.rand(m[:,2].shape[0])*40
+##    m[:,2] += more_noise
+#
+#
+#    gp = GP()
+#    skip = 2
+#    gp.fit(m[::skip])
+#    fig, means, stds = gp.show_surface(m[::skip], show=True, grid_density=20)
+#
+#
+#    plt.matshow(stds, origin='lower')
+#    plt.colorbar()
+#    plt.show()
 
 #    gp.save_matrix(suffix='_PHYTEST_19MAY_COMBINED'+config.SUFFIX)
 
@@ -286,40 +287,29 @@ if __name__=='__main__':
 
 
 #1D tests and stuff below here
+    x = np.linspace(-500,500, 2000)
+    y = np.sin(x*0.005)+np.random.rand(x.shape[0])*0.7
+    m = np.vstack([x,y]).T
+    m = m[::300]
 
+    kernel = kernels.WhiteKernel(noise_level = 0.0001)
+#    kernel += kernels.RationalQuadratic(length_scale =1 , alpha= 1)
+    kernel += kernels.Matern(length_scale = 0.35)
+    gpr = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=15)
 
-#    m = [[0,10],[10,15],[20,30]]
-#    cnt = 10
-#    mx = np.linspace(0,50,cnt)
-#    my = map(lambda x: np.sin(x), mx)
-#    my = [np.random.rand(1) for i in mx]
-#    my[10:20] = [10 for i in range(10,20)]
-
-
-#    trace = np.array(util.load_trace('0'))
-#    my = list(trace[:,2])[::4]
-#    mx = np.linspace(0,len(my),len(my))
-#
-#    m = zip(mx,my)
-#    m = np.array(m)
-#
-#    matern = kernels.Matern(length_scale = 20, nu = 2.5)
-#    white = kernels.WhiteKernel()
-##    rbf = kernels.RBF(length_scale=0.1)
-#    kernel = matern+white
-#    gpr = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=15)
-#    measurements = np.array(m) #make sure its an array now
-#    X = measurements[:,0] #positions
-#    X = X.reshape(-1,1)
-#    Y = measurements[:,1] #sonars
-##    Y = Y/float(np.max(Y))
+    X = m[:,0] #positions
+    X = X.reshape(-1,1)
+    Y = m[:,1] #sonars
 #    Y = u.scale_range(Y, 0, 1)
-#    gpr.fit(X,Y)
-#
-#    xs = np.linspace(-10,len(my)+10,2000)
-#    xs = xs.reshape(-1,1)
-#    means, stds = gpr.predict(xs,return_std = True)
-#    plt.plot(xs,means)
-#    plt.scatter(X,Y)
-#    plt.plot(xs,1.96*stds+means, color='g')
-#    plt.show()
+    gpr.fit(X,Y)
+
+    xx = np.linspace(-800,800,2000)
+    mean, std = gpr.predict(xx.reshape(-1,1), return_std = True)
+
+#    plt.plot(x,y,color='b')
+    plt.scatter(m[:,0],m[:,1],color='b')
+    plt.plot(xx,mean,color='r')
+    plt.plot(xx,mean+std*2,color='g')
+    plt.xlim(-1000,1000)
+    plt.ylim(-1,2.5)
+
