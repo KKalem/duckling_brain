@@ -11,13 +11,13 @@ import util as u
 import time
 
 #suffix added to agent-generated stuff
-SUFFIX = '__com_gp_tahir_009__'#+'__'+str(time.time())
+SUFFIX = '__1k_hybrid_009__'#+'__'+str(time.time())
 
 #is the agent wokring in sim or on physical?
 #changes the communication stuffs mostly
 #from udp multicasts to tcp connections
 #if true, runs in sim.
-SIMULATION = False
+SIMULATION = True
 #wether the agent has a screen or not.
 HEADLESS = False
 #use the tahirvoic method?
@@ -33,7 +33,7 @@ MIN_STD = 0.09
 if SIMULATION:
     import geometry as gm
     #everything is in meters
-    WINDOW_METERS = 50.
+    WINDOW_METERS = 1000.
     #square side = 2a, centered at 0,0
     a = WINDOW_METERS/2.
     #safety distance to shrink
